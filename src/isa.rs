@@ -591,7 +591,10 @@ impl<'a> Instruction<'a> {
                 class: ShiftOp::Shl,
                 vtype: VarType::I32,
             },
-            Instruction::I32ShrS => todo!(),
+            Instruction::I32ShrS => Opcode::BinShift {
+                class: ShiftOp::UnsignedShr,
+                vtype: VarType::I32,
+            },
             Instruction::I32ShrU => Opcode::BinShift {
                 class: ShiftOp::UnsignedShr,
                 vtype: VarType::I32,
