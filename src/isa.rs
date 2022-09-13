@@ -603,7 +603,10 @@ impl<'a> Instruction<'a> {
                 class: ShiftOp::Rotl,
                 vtype: VarType::I32,
             },
-            Instruction::I32Rotr => todo!(),
+            Instruction::I32Rotr=> Opcode::BinShift {
+                class: ShiftOp::Rotr,
+                vtype: VarType::I32,
+            },
             Instruction::I64Clz => todo!(),
             Instruction::I64Ctz => todo!(),
             Instruction::I64Popcnt => todo!(),

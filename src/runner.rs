@@ -631,7 +631,9 @@ impl Interpreter {
             | isa::Instruction::I32And
             | isa::Instruction::I32Or
             | isa::Instruction::I32Xor
-            | isa::Instruction::I32Rotl => Some(RunInstructionTracePre::I32BinOp {
+            | isa::Instruction::I32Rotl 
+            | isa::Instruction::I32Rotr 
+            => Some(RunInstructionTracePre::I32BinOp {
                 left: <_>::from_value_internal(*self.value_stack.pick(2)),
                 right: <_>::from_value_internal(*self.value_stack.pick(1)),
             }),
@@ -1154,6 +1156,19 @@ impl Interpreter {
                 if let RunInstructionTracePre::I32BinOp { left, right } = pre_status.unwrap() {
                     StepInfo::I32BinShiftOp {
                         class: ShiftOp::Rotl,
+                        left,
+                        right,
+                        value: <_>::from_value_internal(*self.value_stack.top()),
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
+
+            isa::Instruction::I32Rotr=> {
+                if let RunInstructionTracePre::I32BinOp { left, right } = pre_status.unwrap() {
+                    StepInfo::I32BinShiftOp {
+                        class: ShiftOp::Rotr,
                         left,
                         right,
                         value: <_>::from_value_internal(*self.value_stack.top()),
