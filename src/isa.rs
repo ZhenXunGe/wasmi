@@ -592,7 +592,7 @@ impl<'a> Instruction<'a> {
                 vtype: VarType::I32,
             },
             Instruction::I32ShrS => Opcode::BinShift {
-                class: ShiftOp::UnsignedShr,
+                class: ShiftOp::SignedShr,
                 vtype: VarType::I32,
             },
             Instruction::I32ShrU => Opcode::BinShift {
@@ -603,7 +603,7 @@ impl<'a> Instruction<'a> {
                 class: ShiftOp::Rotl,
                 vtype: VarType::I32,
             },
-            Instruction::I32Rotr=> Opcode::BinShift {
+            Instruction::I32Rotr => Opcode::BinShift {
                 class: ShiftOp::Rotr,
                 vtype: VarType::I32,
             },

@@ -469,7 +469,9 @@ impl Interpreter {
                 cond: <_>::from_value_internal(*self.value_stack.pick(3)),
             }),
 
-            isa::Instruction::I32Load(offset) | isa::Instruction::I32Load8U(offset) | isa::Instruction::I32Load8S(offset) => {
+            isa::Instruction::I32Load(offset)
+            | isa::Instruction::I32Load8U(offset)
+            | isa::Instruction::I32Load8S(offset) => {
                 let load_size = match *instructions {
                     isa::Instruction::I32Load(..) => MemoryReadSize::U32,
                     isa::Instruction::I32Load8U(..) => MemoryReadSize::U8,
@@ -631,9 +633,8 @@ impl Interpreter {
             | isa::Instruction::I32And
             | isa::Instruction::I32Or
             | isa::Instruction::I32Xor
-            | isa::Instruction::I32Rotl 
-            | isa::Instruction::I32Rotr 
-            => Some(RunInstructionTracePre::I32BinOp {
+            | isa::Instruction::I32Rotl
+            | isa::Instruction::I32Rotr => Some(RunInstructionTracePre::I32BinOp {
                 left: <_>::from_value_internal(*self.value_stack.pick(2)),
                 right: <_>::from_value_internal(*self.value_stack.pick(1)),
             }),
@@ -1165,7 +1166,7 @@ impl Interpreter {
                 }
             }
 
-            isa::Instruction::I32Rotr=> {
+            isa::Instruction::I32Rotr => {
                 if let RunInstructionTracePre::I32BinOp { left, right } = pre_status.unwrap() {
                     StepInfo::I32BinShiftOp {
                         class: ShiftOp::Rotr,
