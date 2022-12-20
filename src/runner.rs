@@ -503,7 +503,7 @@ impl Interpreter {
                 let raw_address = <_>::from_value_internal(*self.value_stack.top());
                 let address =
                     effective_address(offset, raw_address).map_or(None, |addr| Some(addr));
-                let mmid = tracer.lookup_memory_instance(
+                let origin_mmid = tracer.lookup_memory_instance_origin(
                     &function_context
                         .memory
                         .clone()
@@ -516,7 +516,7 @@ impl Interpreter {
                     effective_address: address,
                     vtype: parity_wasm::elements::ValueType::I32,
                     load_size,
-                    mmid: mmid as u64,
+                    origin_mmid,
                 })
             }
             isa::Instruction::I64Load(offset)
@@ -539,7 +539,7 @@ impl Interpreter {
                 let raw_address = <_>::from_value_internal(*self.value_stack.top());
                 let address =
                     effective_address(offset, raw_address).map_or(None, |addr| Some(addr));
-                let mmid = tracer.lookup_memory_instance(
+                let origin_mmid = tracer.lookup_memory_instance_origin(
                     &function_context
                         .memory
                         .clone()
@@ -552,7 +552,7 @@ impl Interpreter {
                     effective_address: address,
                     vtype: parity_wasm::elements::ValueType::I64,
                     load_size,
-                    mmid: mmid as u64,
+                    origin_mmid,
                 })
             }
             isa::Instruction::I32Store(offset)
@@ -569,7 +569,8 @@ impl Interpreter {
                 let raw_address = <_>::from_value_internal(*self.value_stack.pick(2));
                 let address =
                     effective_address(offset, raw_address).map_or(None, |addr| Some(addr));
-                let mmid = tracer.lookup_memory_instance(&function_context.memory.clone().unwrap());
+                let origin_mmid =
+                    tracer.lookup_memory_instance_origin(&function_context.memory.clone().unwrap());
 
                 let pre_block_value = address.map(|address| {
                     let mut buf = [0u8; 8];
@@ -589,7 +590,7 @@ impl Interpreter {
                     value: value as u64,
                     vtype: parity_wasm::elements::ValueType::I32,
                     store_size,
-                    mmid: mmid as u64,
+                    origin_mmid,
                     pre_block_value,
                 })
             }
@@ -609,7 +610,8 @@ impl Interpreter {
                 let raw_address = <_>::from_value_internal(*self.value_stack.pick(2));
                 let address =
                     effective_address(offset, raw_address).map_or(None, |addr| Some(addr));
-                let mmid = tracer.lookup_memory_instance(&function_context.memory.clone().unwrap());
+                let origin_mmid =
+                    tracer.lookup_memory_instance_origin(&function_context.memory.clone().unwrap());
 
                 let pre_block_value = address.map(|address| {
                     let mut buf = [0u8; 8];
@@ -629,7 +631,7 @@ impl Interpreter {
                     value,
                     vtype: parity_wasm::elements::ValueType::I64,
                     store_size,
-                    mmid: mmid as u64,
+                    origin_mmid,
                     pre_block_value,
                 })
             }
@@ -778,7 +780,7 @@ impl Interpreter {
                 value: from_value_internal_to_u64_with_typ(vtype.into(), *self.value_stack.top()),
                 vtype: vtype.into(),
             },
-            isa::Instruction::GetGlobal(idx) => {
+            isa::Instruction::GetGlobal(idx) | isa::Instruction::SetGlobal(idx) => {
                 let tracer = self.tracer.as_ref().unwrap().borrow();
 
                 let global_ref = context.module().global_by_index(idx).unwrap();
@@ -791,49 +793,25 @@ impl Interpreter {
 
                 let (origin_module, origin_idx) =
                     tracer.lookup_global_instance(&global_ref).unwrap();
-                let moid = tracer.lookup_module_instance(&context.module);
-                /*
-                 * TODO: imported global is not support yet.
-                 */
-                assert_eq!(origin_module, moid);
-                assert_eq!(origin_idx, idx as u16);
 
-                StepInfo::GetGlobal {
-                    idx,
-                    origin_module: moid,
-                    origin_idx: idx as u16,
-                    vtype,
-                    is_mutable,
-                    value,
-                }
-            }
-            isa::Instruction::SetGlobal(idx) => {
-                let tracer = self.tracer.as_ref().unwrap().borrow();
-
-                let global_ref = context.module().global_by_index(idx).unwrap();
-                let is_mutable = global_ref.is_mutable();
-                let vtype: VarType = global_ref.value_type().into_elements().into();
-                let value = from_value_internal_to_u64_with_typ(
-                    vtype.into(),
-                    ValueInternal::from(global_ref.get()),
-                );
-
-                let (origin_module, origin_idx) =
-                    tracer.lookup_global_instance(&global_ref).unwrap();
-                let moid = tracer.lookup_module_instance(&context.module);
-                /*
-                 * TODO: imported global is not support yet.
-                 */
-                assert_eq!(origin_module, moid);
-                assert_eq!(origin_idx, idx as u16);
-
-                StepInfo::SetGlobal {
-                    idx,
-                    origin_module: moid,
-                    origin_idx: idx as u16,
-                    vtype,
-                    is_mutable,
-                    value,
+                match *instructions {
+                    isa::Instruction::GetGlobal(_) => StepInfo::GetGlobal {
+                        idx,
+                        origin_module,
+                        origin_idx,
+                        vtype,
+                        is_mutable,
+                        value,
+                    },
+                    isa::Instruction::SetGlobal(_) => StepInfo::SetGlobal {
+                        idx,
+                        origin_module,
+                        origin_idx,
+                        vtype,
+                        is_mutable,
+                        value,
+                    },
+                    _ => unreachable!(),
                 }
             }
 
@@ -1020,7 +998,7 @@ impl Interpreter {
                     effective_address,
                     vtype,
                     load_size,
-                    mmid,
+                    origin_mmid,
                 } = pre_status.unwrap()
                 {
                     let block_value = {
@@ -1045,7 +1023,7 @@ impl Interpreter {
                             *self.value_stack.top(),
                         ),
                         block_value,
-                        mmid,
+                        origin_mmid,
                     }
                 } else {
                     unreachable!()
@@ -1065,7 +1043,7 @@ impl Interpreter {
                     value,
                     vtype,
                     store_size,
-                    mmid,
+                    origin_mmid,
                     pre_block_value,
                 } = pre_status.unwrap()
                 {
@@ -1087,7 +1065,7 @@ impl Interpreter {
                         raw_address,
                         effective_address: effective_address.unwrap(),
                         value: value as u64,
-                        mmid,
+                        origin_mmid,
                         pre_block_value: pre_block_value.unwrap(),
                         updated_block_value,
                     }

@@ -489,7 +489,7 @@ impl ModuleInstance {
                     }
 
                     if let Some(memory_ref) = module_ref.memory_by_index(DEFAULT_MEMORY_INDEX) {
-                        tracer.push_init_memory(memory_ref)
+                        tracer.push_init_memory(current_module_id, memory_ref)
                     }
                 }
             }

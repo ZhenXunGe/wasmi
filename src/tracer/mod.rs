@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-use specs::{host_function::HostFunctionDesc, mtable::VarType, types::FunctionType};
+use specs::{
+    host_function::HostFunctionDesc,
+    imtable::{ImportMemoryEntry, InitMemoryEntry, InitMemoryTable, InitMemoryTableEntry},
+    mtable::{LocationType, VarType},
+    types::FunctionType,
+};
 
 use crate::{
     runner::{from_value_internal_to_u64_with_typ, ValueInternal},
@@ -14,13 +19,11 @@ use crate::{
 
 use self::{
     etable::ETable,
-    imtable::IMTable,
     itable::{IEntry, ITable},
     jtable::JTable,
 };
 
 pub mod etable;
-pub mod imtable;
 pub mod itable;
 pub mod jtable;
 
@@ -34,11 +37,12 @@ pub struct FuncDesc {
 #[derive(Debug)]
 pub struct Tracer {
     pub itable: ITable,
-    pub imtable: IMTable,
+    pub imtable: InitMemoryTable,
     pub etable: ETable,
     pub jtable: JTable,
     module_instance_lookup: Vec<(ModuleRef, u16)>,
     memory_instance_lookup: Vec<(MemoryRef, u16)>,
+    memory_instance_origin_mmid: Vec<(MemoryRef, u16)>,
     global_instance_lookup: Vec<(GlobalRef, (u16, u16))>,
     function_lookup: Vec<(FuncRef, u16)>,
     last_jump_eid: Vec<u64>,
@@ -52,12 +56,13 @@ impl Tracer {
     pub fn new(host_plugin_lookup: HashMap<usize, HostFunctionDesc>) -> Self {
         Tracer {
             itable: ITable::default(),
-            imtable: IMTable::default(),
+            imtable: InitMemoryTable::default(),
             etable: ETable::default(),
             last_jump_eid: vec![0],
             jtable: JTable::default(),
             module_instance_lookup: vec![],
             memory_instance_lookup: vec![],
+            memory_instance_origin_mmid: vec![],
             global_instance_lookup: vec![],
             function_lookup: vec![],
             function_index_allocator: 1,
@@ -105,44 +110,83 @@ impl Tracer {
 }
 
 impl Tracer {
-    pub(crate) fn push_init_memory(&mut self, memref: MemoryRef) {
-        let pages = (*memref).limits().initial();
-        // one page contains 64KB*1024/8=8192 u64 entries
-        for i in 0..(pages * 8192) {
-            let mut buf = [0u8; 8];
-            (*memref).get_into(i * 8, &mut buf).unwrap();
-            self.imtable.push(
-                false,
-                true,
-                self.next_memory_id(),
-                i,
-                VarType::I64,
-                u64::from_le_bytes(buf),
-            );
+    fn try_get_memory_ref_origin_mmid(&self, memref: &MemoryRef) -> Option<u16> {
+        for (m_ref, mmid) in &self.memory_instance_origin_mmid {
+            if memref == m_ref {
+                return Some(*mmid);
+            }
         }
 
-        self.memory_instance_lookup
-            .push((memref, self.next_memory_id()));
+        None
+    }
+
+    pub(crate) fn push_init_memory(&mut self, moid: u16, memref: MemoryRef) {
+        if let Some(origin_moid) = self.try_get_memory_ref_origin_mmid(&memref) {
+            self.imtable
+                .push(InitMemoryTableEntry::Import(ImportMemoryEntry {
+                    ltype: LocationType::Heap,
+                    origin_moid: origin_moid,
+                    origin_idx: 0, // Currently wasm only supports one memory instance per module.
+                    moid: moid,
+                    idx: 0,
+                }))
+        } else {
+            let pages = (*memref).limits().initial();
+
+            // one page contains 64KB*1024/8=8192 u64 entries
+            for i in 0..(pages * 8192) {
+                let mut buf = [0u8; 8];
+                (*memref).get_into(i * 8, &mut buf).unwrap();
+
+                let entry = InitMemoryTableEntry::Init(InitMemoryEntry {
+                    ltype: LocationType::Heap,
+                    is_mutable: true,
+                    mmid: moid as u64,
+                    offset: i as u64,
+                    vtype: VarType::I64,
+                    value: u64::from_le_bytes(buf),
+                });
+
+                self.imtable.push(entry);
+            }
+
+            self.memory_instance_origin_mmid
+                .push((memref.clone(), moid));
+        }
+
+        self.memory_instance_lookup.push((memref, moid));
     }
 
     pub(crate) fn push_global(&mut self, moid: u16, globalidx: u32, globalref: &GlobalRef) {
         let vtype = globalref.elements_value_type().into();
 
-        if let Some((_origin_moid, _origin_idx)) = self.lookup_global_instance(globalref) {
-            // Import global does not support yet.
-            todo!()
+        if let Some((origin_moid, origin_idx)) = self.lookup_global_instance(globalref) {
+            let entry = InitMemoryTableEntry::Import(ImportMemoryEntry {
+                ltype: LocationType::Global,
+                origin_moid,
+                origin_idx,
+                moid,
+                idx: globalidx as u16,
+            });
+
+            self.imtable.push(entry)
         } else {
             self.global_instance_lookup
                 .push((globalref.clone(), (moid, globalidx as u16)));
 
-            self.imtable.push(
-                true,
-                globalref.is_mutable(),
-                moid,
-                globalidx,
+            let entry = InitMemoryTableEntry::Init(InitMemoryEntry {
+                ltype: LocationType::Global,
+                is_mutable: globalref.is_mutable(),
+                mmid: moid as u64,
+                offset: globalidx as u64,
                 vtype,
-                from_value_internal_to_u64_with_typ(vtype, ValueInternal::from(globalref.get())),
-            )
+                value: from_value_internal_to_u64_with_typ(
+                    vtype,
+                    ValueInternal::from(globalref.get()),
+                ),
+            });
+
+            self.imtable.push(entry)
         }
     }
 
@@ -275,6 +319,16 @@ impl Tracer {
 
     pub fn lookup_memory_instance(&self, module_instance: &MemoryRef) -> u16 {
         for m in &self.memory_instance_lookup {
+            if &m.0 == module_instance {
+                return m.1;
+            }
+        }
+
+        unreachable!()
+    }
+
+    pub fn lookup_memory_instance_origin(&self, module_instance: &MemoryRef) -> u16 {
+        for m in &self.memory_instance_origin_mmid {
             if &m.0 == module_instance {
                 return m.1;
             }

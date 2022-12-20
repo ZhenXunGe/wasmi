@@ -14,7 +14,7 @@ impl Into<InstructionTableEntry> for IEntry {
     fn into(self) -> InstructionTableEntry {
         InstructionTableEntry {
             moid: self.module_instance_index,
-            mmid: self.module_instance_index,
+            // mmid: self.module_instance_index,
             fid: self.func_index,
             iid: self.pc,
             opcode: self.opcode,

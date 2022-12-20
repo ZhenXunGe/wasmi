@@ -41,7 +41,7 @@ pub enum RunInstructionTracePre {
         effective_address: Option<u32>, // use option in case of memory out of bound
         vtype: ValueType,
         load_size: MemoryReadSize,
-        mmid: u64,
+        origin_mmid: u16,
     },
     Store {
         offset: u32,
@@ -50,7 +50,7 @@ pub enum RunInstructionTracePre {
         value: u64,
         vtype: ValueType,
         store_size: MemoryStoreSize,
-        mmid: u64,
+        origin_mmid: u16,
         pre_block_value: Option<u64>,
     },
 
