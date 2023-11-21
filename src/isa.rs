@@ -580,7 +580,10 @@ impl<'a> Instruction<'a> {
                 vtype: VarType::I64,
                 value: v as u64,
             },
-            Instruction::F32Const(_) => todo!(),
+            Instruction::F32Const(v) => Opcode::Const {
+                vtype: VarType::F32,
+                value: v as u64,
+            },
             Instruction::F64Const(_) => todo!(),
             Instruction::I32Eqz => Opcode::Test {
                 class: TestOp::Eqz,
@@ -672,7 +675,10 @@ impl<'a> Instruction<'a> {
             },
             Instruction::F32Eq => todo!(),
             Instruction::F32Ne => todo!(),
-            Instruction::F32Lt => todo!(),
+            Instruction::F32Lt => Opcode::Rel {
+                class: RelOp::Lt,
+                vtype: VarType::F32,
+            },
             Instruction::F32Gt => todo!(),
             Instruction::F32Le => todo!(),
             Instruction::F32Ge => todo!(),
@@ -833,8 +839,14 @@ impl<'a> Instruction<'a> {
             Instruction::F32Trunc => todo!(),
             Instruction::F32Nearest => todo!(),
             Instruction::F32Sqrt => todo!(),
-            Instruction::F32Add => todo!(),
-            Instruction::F32Sub => todo!(),
+            Instruction::F32Add => Opcode::Bin {
+                class: BinOp::Add,
+                vtype: VarType::F32,
+            },
+            Instruction::F32Sub => Opcode::Bin {
+                class: BinOp::Sub,
+                vtype: VarType::F32,
+            },
             Instruction::F32Mul => todo!(),
             Instruction::F32Div => todo!(),
             Instruction::F32Min => todo!(),

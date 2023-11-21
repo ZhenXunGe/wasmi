@@ -117,6 +117,15 @@ pub enum RunInstructionTracePre {
         val2: u64,
         cond: u64,
     },
+
+    F32Comp {
+        left: f32,
+        right: f32,
+    },
+    F32BinOp {
+        left: f32,
+        right: f32,
+    },
 }
 
 pub(crate) trait ETable {

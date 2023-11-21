@@ -155,6 +155,7 @@ impl BitOp {
 pub enum RelOp {
     Eq,
     Ne,
+    Lt,
     SignedGt,
     UnsignedGt,
     SignedGe,

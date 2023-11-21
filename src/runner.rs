@@ -129,6 +129,7 @@ pub fn from_value_internal_to_u64_with_typ(vtype: VarType, val: ValueInternal) -
     match vtype {
         VarType::I32 => val.0 as u32 as u64,
         VarType::I64 => val.0 as u64,
+        VarType::F32 => val.0 as u64,
     }
 }
 
@@ -832,6 +833,20 @@ impl Interpreter {
             isa::Instruction::I64Extend32S => Some(RunInstructionTracePre::I64SignExtendI32 {
                 value: <_>::from_value_internal(*self.value_stack.pick(1)),
             }),
+
+            isa::Instruction::F32Const(_) => None,
+
+            isa::Instruction::F32Lt => Some(RunInstructionTracePre::F32Comp {
+                left: <_>::from_value_internal(*self.value_stack.pick(2)),
+                right: <_>::from_value_internal(*self.value_stack.pick(1)),
+            }),
+
+            isa::Instruction::F32Add | isa::Instruction::F32Sub => {
+                Some(RunInstructionTracePre::F32BinOp {
+                    left: <_>::from_value_internal(*self.value_stack.pick(2)),
+                    right: <_>::from_value_internal(*self.value_stack.pick(1)),
+                })
+            }
 
             _ => {
                 println!("{:?}", *instructions);
@@ -1979,6 +1994,48 @@ impl Interpreter {
                 }
             }
 
+            isa::Instruction::F32Const(value) => StepInfo::F32Const {
+                value: value as f32,
+            },
+
+            isa::Instruction::F32Lt => {
+                if let RunInstructionTracePre::F32Comp { left, right } = pre_status.unwrap() {
+                    StepInfo::F32Comp {
+                        class: RelOp::Lt,
+                        left,
+                        right,
+                        value: <_>::from_value_internal(*self.value_stack.top()),
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
+
+            isa::Instruction::F32Sub => {
+                if let RunInstructionTracePre::F32BinOp { left, right } = pre_status.unwrap() {
+                    StepInfo::F32BinOp {
+                        class: BinOp::Sub,
+                        left,
+                        right,
+                        value: <_>::from_value_internal(*self.value_stack.top()),
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
+
+            isa::Instruction::F32Add => {
+                if let RunInstructionTracePre::F32BinOp { left, right } = pre_status.unwrap() {
+                    StepInfo::F32BinOp {
+                        class: BinOp::Add,
+                        left,
+                        right,
+                        value: <_>::from_value_internal(*self.value_stack.top()),
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
             _ => {
                 println!("{:?}", instructions);
                 unimplemented!()

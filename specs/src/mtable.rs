@@ -32,6 +32,7 @@ impl AccessType {
 pub enum VarType {
     I64 = 0,
     I32 = 1,
+    F32 = 2,
 }
 
 impl VarType {
@@ -39,6 +40,7 @@ impl VarType {
         match self {
             VarType::I32 => 4,
             VarType::I64 => 8,
+            VarType::F32 => 4,
         }
     }
 }
@@ -82,6 +84,7 @@ impl From<parity_wasm::elements::ValueType> for VarType {
         match v {
             parity_wasm::elements::ValueType::I32 => Self::I32,
             parity_wasm::elements::ValueType::I64 => Self::I64,
+            parity_wasm::elements::ValueType::F32 => Self::F32,
             _ => todo!(),
         }
     }
@@ -92,6 +95,7 @@ impl From<crate::types::ValueType> for VarType {
         match v {
             crate::types::ValueType::I32 => Self::I32,
             crate::types::ValueType::I64 => Self::I64,
+            crate::types::ValueType::F32 => Self::F32,
         }
     }
 }

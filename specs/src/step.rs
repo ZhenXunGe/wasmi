@@ -238,4 +238,22 @@ pub enum StepInfo {
         value: i64,
         result: i64,
     },
+
+    F32Const {
+        value: f32,
+    },
+
+    F32Comp {
+        class: RelOp,
+        left: f32,
+        right: f32,
+        value: bool,
+    },
+
+    F32BinOp {
+        class: BinOp,
+        left: f32,
+        right: f32,
+        value: f32,
+    },
 }
