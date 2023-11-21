@@ -27,4 +27,3 @@ impl FromBn for BigUint {
         bn.clone()
     }
 }
-
