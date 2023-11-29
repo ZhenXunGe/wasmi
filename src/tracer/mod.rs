@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use core::cell::RefCell;
+use std::{collections::HashMap, rc::Rc};
 
 use regex::Regex;
 use specs::{
@@ -52,6 +53,7 @@ pub struct Tracer {
     pub static_jtable_entries: Vec<StaticFrameEntry>,
     pub phantom_functions: Vec<String>,
     pub phantom_functions_ref: Vec<FuncRef>,
+    pub is_in_phantom: Rc<RefCell<bool>>,
     // Wasm Image Function Idx
     pub wasm_input_func_idx: Option<u32>,
     pub wasm_input_func_ref: Option<FuncRef>,
@@ -65,6 +67,7 @@ impl Tracer {
         host_plugin_lookup: HashMap<usize, HostFunctionDesc>,
         phantom_functions: &Vec<String>,
         dry_run: bool,
+        is_in_phantom: Rc<RefCell<bool>>,
     ) -> Self {
         Tracer {
             itable: InstructionTable::default(),
@@ -82,6 +85,7 @@ impl Tracer {
             static_jtable_entries: vec![],
             phantom_functions: phantom_functions.clone(),
             phantom_functions_ref: vec![],
+            is_in_phantom,
             wasm_input_func_ref: None,
             wasm_input_func_idx: None,
             dry_run,

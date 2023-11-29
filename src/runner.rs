@@ -381,6 +381,8 @@ impl Interpreter {
                                     .borrow()
                                     .is_phantom_function(&nested_context.function)
                                 {
+                                    *tracer.borrow_mut().is_in_phantom.borrow_mut() = true;
+
                                     self.mask_tracer.push(self.value_stack.sp as u32);
                                 }
                             }
@@ -2084,6 +2086,8 @@ impl Interpreter {
                             let sp_before = self.mask_tracer.pop().unwrap();
 
                             if self.mask_tracer.is_empty() {
+                                *tracer.borrow_mut().is_in_phantom.borrow_mut() = false;
+
                                 let last_jump_eid = tracer.borrow().last_jump_eid();
                                 let callee_fid =
                                     tracer.borrow().lookup_function(&function_context.function);
