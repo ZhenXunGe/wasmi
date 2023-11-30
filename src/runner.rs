@@ -2484,6 +2484,11 @@ impl Interpreter {
             .expect("Due to validation global should exists");
         let val = global.get();
         self.value_stack.push(val.into())?;
+
+        self.tracer
+            .as_ref()
+            .map(|tracer| tracer.borrow().global_reading_check(index, val.into()));
+
         Ok(InstructionOutcome::RunNextInstruction)
     }
 
@@ -2500,6 +2505,11 @@ impl Interpreter {
         global
             .set(val.with_type(global.value_type()))
             .expect("Due to validation set to a global should succeed");
+
+        self.tracer
+            .as_ref()
+            .map(|tracer| tracer.borrow_mut().record_global_writing(index, val));
+
         Ok(InstructionOutcome::RunNextInstruction)
     }
 
@@ -2511,6 +2521,7 @@ impl Interpreter {
     where
         ValueInternal: From<T>,
         T: LittleEndianConvert,
+        T: Copy,
     {
         let raw_address = self.value_stack.pop_as();
         let address = effective_address(offset, raw_address)?;
@@ -2521,6 +2532,11 @@ impl Interpreter {
             .get_value(address)
             .map_err(|_| TrapCode::MemoryAccessOutOfBounds)?;
         self.value_stack.push(n.into())?;
+
+        self.tracer
+            .as_ref()
+            .map(|tracer| tracer.borrow().memory_reading_check(address, n));
+
         Ok(InstructionOutcome::RunNextInstruction)
     }
 
@@ -2533,6 +2549,7 @@ impl Interpreter {
         T: ExtendInto<U>,
         ValueInternal: From<U>,
         T: LittleEndianConvert,
+        T: Copy,
     {
         let raw_address = self.value_stack.pop_as();
         let address = effective_address(offset, raw_address)?;
@@ -2542,6 +2559,11 @@ impl Interpreter {
         let v: T = m
             .get_value(address)
             .map_err(|_| TrapCode::MemoryAccessOutOfBounds)?;
+
+        self.tracer.as_ref().map(|tracer| {
+            tracer.borrow().memory_reading_check(address, v);
+        });
+
         let stack_value: U = v.extend_into();
         self.value_stack
             .push(stack_value.into())
@@ -2557,6 +2579,7 @@ impl Interpreter {
     where
         T: FromValueInternal,
         T: LittleEndianConvert,
+        T: Copy,
     {
         let stack_value = self.value_stack.pop_as::<T>();
         let raw_address = self.value_stack.pop_as::<u32>();
@@ -2567,6 +2590,13 @@ impl Interpreter {
             .expect("Due to validation memory should exists");
         m.set_value(address, stack_value)
             .map_err(|_| TrapCode::MemoryAccessOutOfBounds)?;
+
+        self.tracer.as_ref().map(|tracer| {
+            tracer
+                .borrow_mut()
+                .record_memory_writing(address, stack_value);
+        });
+
         Ok(InstructionOutcome::RunNextInstruction)
     }
 
@@ -2579,6 +2609,7 @@ impl Interpreter {
         T: FromValueInternal,
         T: WrapInto<U>,
         U: LittleEndianConvert,
+        U: Copy,
     {
         let stack_value: T = <_>::from_value_internal(self.value_stack.pop());
         let stack_value = stack_value.wrap_into();
@@ -2589,6 +2620,13 @@ impl Interpreter {
             .expect("Due to validation memory should exists");
         m.set_value(address, stack_value)
             .map_err(|_| TrapCode::MemoryAccessOutOfBounds)?;
+
+        self.tracer.as_ref().map(|tracer| {
+            tracer
+                .borrow_mut()
+                .record_memory_writing(address, stack_value);
+        });
+
         Ok(InstructionOutcome::RunNextInstruction)
     }
 

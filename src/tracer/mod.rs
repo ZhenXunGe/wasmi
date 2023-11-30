@@ -1,5 +1,8 @@
 use core::cell::RefCell;
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    rc::Rc,
+};
 
 use regex::Regex;
 use specs::{
@@ -12,6 +15,7 @@ use specs::{
     mtable::VarType,
     types::FunctionType,
 };
+use wasmi_core::LittleEndianConvert;
 
 use crate::{
     runner::{from_value_internal_to_u64_with_typ, ValueInternal},
@@ -51,12 +55,20 @@ pub struct Tracer {
     pub(crate) function_index_translation: HashMap<u32, FuncDesc>,
     pub host_function_index_lookup: HashMap<usize, HostFunctionDesc>,
     pub static_jtable_entries: Vec<StaticFrameEntry>,
+
+    /*
+     * Phantom Helper
+     */
     pub phantom_functions: Vec<String>,
     pub phantom_functions_ref: Vec<FuncRef>,
     pub is_in_phantom: Rc<RefCell<bool>>,
     // Wasm Image Function Idx
     pub wasm_input_func_idx: Option<u32>,
     pub wasm_input_func_ref: Option<FuncRef>,
+    pub phantom_memory_sanity_check: bool,
+    pub cached_memory_accessing: BTreeMap<u32, u8>,
+    pub cached_global_accessing: BTreeMap<u32, ValueInternal>,
+
     dry_run: bool,
     counter: usize,
 }
@@ -68,6 +80,7 @@ impl Tracer {
         phantom_functions: &Vec<String>,
         dry_run: bool,
         is_in_phantom: Rc<RefCell<bool>>,
+        phantom_memory_sanity_check: bool,
     ) -> Self {
         Tracer {
             itable: InstructionTable::default(),
@@ -90,6 +103,9 @@ impl Tracer {
             wasm_input_func_idx: None,
             dry_run,
             counter: 0,
+            phantom_memory_sanity_check,
+            cached_memory_accessing: BTreeMap::new(),
+            cached_global_accessing: BTreeMap::new(),
         }
     }
 
@@ -132,6 +148,57 @@ impl Tracer {
 
     pub fn get_trace_count(&self) -> usize {
         self.counter
+    }
+
+    pub fn record_global_writing(&mut self, global_index: u32, value: ValueInternal) {
+        if !self.phantom_memory_sanity_check {
+            return;
+        }
+
+        self.cached_global_accessing.insert(global_index, value);
+    }
+
+    pub fn global_reading_check(&self, global_index: u32, expected_value: ValueInternal) {
+        if !self.phantom_memory_sanity_check {
+            return;
+        }
+
+        if let Some(value) = self.cached_global_accessing.get(&global_index) {
+            assert_eq!(*value, expected_value);
+        }
+    }
+
+    pub fn record_memory_writing<T: LittleEndianConvert>(&mut self, address: u32, value: T) {
+        if !self.phantom_memory_sanity_check {
+            return;
+        }
+
+        value
+            .into_le_bytes()
+            .as_ref()
+            .iter()
+            .enumerate()
+            .for_each(|(index, byte)| {
+                self.cached_memory_accessing
+                    .insert(address + index as u32, *byte);
+            });
+    }
+
+    pub fn memory_reading_check<T: LittleEndianConvert>(&self, address: u32, expected_value: T) {
+        if !self.phantom_memory_sanity_check {
+            return;
+        }
+
+        expected_value
+            .into_le_bytes()
+            .as_ref()
+            .iter()
+            .enumerate()
+            .for_each(|(index, expected_byte)| {
+                if let Some(byte) = self.cached_memory_accessing.get(&(address + index as u32)) {
+                    assert_eq!(*byte, *expected_byte);
+                }
+            });
     }
 }
 
