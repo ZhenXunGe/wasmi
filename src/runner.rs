@@ -2013,7 +2013,7 @@ impl Interpreter {
             };
 
             macro_rules! trace_post {
-                () => {{
+                ($is_return: ident) => {{
                     if let Some(tracer) = self.get_tracer_if_active() {
                         let post_status =
                             self.run_instruction_post(pre_status, function_context, &instruction);
@@ -2039,28 +2039,39 @@ impl Interpreter {
                             last_jump_eid,
                             post_status,
                         );
+
+                        // invoke callback to dump continuation slice tables
+                        if tracer.dump_enabled() {
+                            // println!("capacity: {}, tracer eid: {}, {}", tracer.slice_capability(), tracer.eid(), tracer.get_prev_eid());
+                            let is_last_slice = self.call_stack.is_empty() && $is_return;
+                            // println!("is last slice: {}", is_last_slice);
+                            assert!(tracer.eid() > tracer.get_prev_eid(), "eid: {}, prev_edi: {}", tracer.eid(), tracer.get_prev_eid());
+                            if (tracer.eid() - tracer.get_prev_eid() > tracer.slice_capability()) || is_last_slice {
+                                tracer.dump_witness(is_last_slice);
+                            }
+                        }
                     }
                 }};
             }
 
             match self.run_instruction(function_context, &instruction)? {
                 InstructionOutcome::RunNextInstruction => {
-                    trace_post!();
+                    trace_post!(false);
                 }
                 InstructionOutcome::Branch(target) => {
-                    trace_post!();
+                    trace_post!(false);
                     iter = instructions.iterate_from(target.dst_pc);
                     self.value_stack.drop_keep(target.drop_keep);
                 }
                 InstructionOutcome::ExecuteCall(func_ref) => {
                     // We don't record updated pc, the value should be recorded in the next trace log.
-                    trace_post!();
+                    trace_post!(false);
 
                     function_context.position = iter.position();
                     return Ok(RunResult::NestedCall(func_ref));
                 }
                 InstructionOutcome::Return(drop_keep) => {
-                    trace_post!();
+                    trace_post!(true);
 
                     if let Some(tracer) = self.tracer.clone() {
                         if tracer
@@ -2996,7 +3007,7 @@ impl Interpreter {
 }
 
 /// Function execution context.
-struct FunctionContext {
+pub(crate) struct FunctionContext {
     /// Is context initialized.
     pub is_initialized: bool,
     /// Internal function reference.
@@ -3027,7 +3038,7 @@ impl FunctionContext {
         self.is_initialized
     }
 
-    pub fn initialize(
+    fn initialize(
         &mut self,
         _locals: &[Local],
         _value_stack: &mut ValueStack,

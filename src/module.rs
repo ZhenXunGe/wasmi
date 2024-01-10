@@ -30,7 +30,7 @@ use core::{
     fmt,
 };
 use parity_wasm::elements::{External, InitExpr, Instruction, Internal, ResizableLimits, Type};
-use specs::configure_table::ConfigureTable;
+use specs::{configure_table::ConfigureTable, jtable::StaticFrameEntry};
 use validation::{DEFAULT_MEMORY_INDEX, DEFAULT_TABLE_INDEX};
 
 /// Reference to a [`ModuleInstance`].
@@ -55,6 +55,8 @@ impl ::core::ops::Deref for ModuleRef {
         &self.0
     }
 }
+
+pub const ENTRY: &str = "zkmain";
 
 /// An external value is the runtime representation of an entity
 /// that can be imported or exported.
@@ -607,7 +609,6 @@ impl ModuleInstance {
         tracer: Option<Rc<RefCell<Tracer>>>,
     ) -> Result<NotStartedModuleRef<'m>, Error> {
         let module = loaded_module.module();
-
         let mut extern_vals = Vec::new();
         for import_entry in module.import_section().map(|s| s.entries()).unwrap_or(&[]) {
             let module_name = import_entry.module();
@@ -645,6 +646,58 @@ impl ModuleInstance {
         }
 
         let module_ref = Self::with_externvals(loaded_module, extern_vals.iter(), tracer.clone());
+
+        let instance = module_ref
+            .as_ref()
+            .expect("failed to instantiate wasm module");
+        // set tracer's initial fid_of_entry
+        let tracer = tracer.expect("failed to initialize tracer");
+        let fid_of_entry = {
+            let idx_of_entry = instance.lookup_function_by_name(tracer.clone(), ENTRY);
+            tracer
+                .clone()
+                .borrow_mut()
+                .static_jtable_entries
+                .push(StaticFrameEntry {
+                    enable: true,
+                    frame_id: 0,
+                    next_frame_id: 0,
+                    callee_fid: idx_of_entry,
+                    fid: 0,
+                    iid: 0,
+                });
+
+            tracer
+                .clone()
+                .borrow_mut()
+                .static_jtable_entries
+                .push(if instance.has_start() {
+                    StaticFrameEntry {
+                        enable: true,
+                        frame_id: 0,
+                        next_frame_id: 0,
+                        callee_fid: 0, // the fid of start function is always 0
+                        fid: idx_of_entry,
+                        iid: 0,
+                    }
+                } else {
+                    StaticFrameEntry {
+                        enable: false,
+                        frame_id: 0,
+                        next_frame_id: 0,
+                        callee_fid: 0,
+                        fid: 0,
+                        iid: 0,
+                    }
+                });
+
+            if instance.has_start() {
+                0
+            } else {
+                idx_of_entry
+            }
+        };
+        tracer.clone().borrow_mut().set_fid_of_entry(fid_of_entry);
 
         module_ref
     }

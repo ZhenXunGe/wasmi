@@ -279,7 +279,7 @@ pub use self::{
     host::{Externals, NopExternals, RuntimeArgs},
     imports::{ImportResolver, ImportsBuilder, ModuleImportResolver},
     memory::{MemoryInstance, MemoryRef, LINEAR_MEMORY_PAGE_SIZE},
-    module::{ExternVal, ModuleInstance, ModuleRef, NotStartedModuleRef},
+    module::{ExternVal, ModuleInstance, ModuleRef, NotStartedModuleRef, ENTRY},
     runner::{StackRecycler, DEFAULT_CALL_STACK_LIMIT, DEFAULT_VALUE_STACK_LIMIT},
     table::{TableInstance, TableRef},
     types::{GlobalDescriptor, MemoryDescriptor, Signature, TableDescriptor},

@@ -3,7 +3,7 @@ use specs::{
     mtable::{LocationType, VarType},
 };
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct IMTable(Vec<InitMemoryTableEntry>);
 
 impl IMTable {

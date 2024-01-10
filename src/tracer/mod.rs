@@ -1,17 +1,24 @@
-use std::collections::HashMap;
+use core::{cell::RefCell, fmt::Debug};
+use std::{collections::HashMap, rc::Rc, sync::Arc};
 
 use specs::{
-    brtable::{ElemEntry, ElemTable},
+    brtable::{ElemEntry, ElemTable, BrTable},
     configure_table::ConfigureTable,
     etable::EventTable,
     host_function::HostFunctionDesc,
+    imtable::InitMemoryTable,
     itable::{InstructionTable, InstructionTableEntry},
-    jtable::{JumpTable, StaticFrameEntry},
+    jtable::{JumpTable, StaticFrameEntry, STATIC_FRAME_ENTRY_NUMBER},
     mtable::VarType,
+    state::{InitializationState, UpdateCompilationTable},
     types::FunctionType,
+    CompilationTable,
+    ExecutionTable,
+    Tables,
 };
 
 use crate::{
+    func::FuncInstanceInternal,
     runner::{from_value_internal_to_u64_with_typ, ValueInternal},
     FuncRef,
     GlobalRef,
@@ -19,6 +26,7 @@ use crate::{
     Module,
     ModuleRef,
     Signature,
+    DEFAULT_VALUE_STACK_LIMIT,
 };
 
 use self::{etable::ETable, imtable::IMTable, phantom::PhantomFunction};
@@ -34,10 +42,23 @@ pub struct FuncDesc {
     pub signature: Signature,
 }
 
+pub trait SliceDumper {
+    fn dump(&mut self, tables: Tables);
+    fn get_capacity(&self) -> usize;
+    fn dump_enabled(&self) -> bool;
+}
+
+impl Debug for dyn SliceDumper {
+    fn fmt(&self, _: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct Tracer {
     pub itable: InstructionTable,
     pub imtable: IMTable,
+    pub br_table: BrTable,
     pub etable: EventTable,
     pub jtable: JumpTable,
     pub elem_table: ElemTable,
@@ -54,6 +75,16 @@ pub struct Tracer {
     // Wasm Image Function Idx
     pub wasm_input_func_idx: Option<u32>,
     pub wasm_input_func_ref: Option<FuncRef>,
+    // wasm perf opt by caching
+    itable_entries: HashMap<u64, InstructionTableEntry>,
+    function_map: HashMap<usize, u32>,
+    host_function_map: HashMap<usize, u32>,
+    // continuation
+    witness_dumper: Rc<RefCell<dyn SliceDumper>>,
+    fid_of_entry: u32,
+    prev_eid: u32,
+    cur_imtable: InitMemoryTable,
+    cur_state: InitializationState<u32>,
 }
 
 impl Tracer {
@@ -61,10 +92,12 @@ impl Tracer {
     pub fn new(
         host_plugin_lookup: HashMap<usize, HostFunctionDesc>,
         phantom_functions: &Vec<String>,
+        witness_dumper: Rc<RefCell<dyn SliceDumper>>,
     ) -> Self {
         Tracer {
             itable: InstructionTable::default(),
             imtable: IMTable::default(),
+            br_table: BrTable::default(),
             etable: EventTable::default(),
             last_jump_eid: vec![],
             jtable: JumpTable::default(),
@@ -80,6 +113,15 @@ impl Tracer {
             phantom_functions_ref: vec![],
             wasm_input_func_ref: None,
             wasm_input_func_idx: None,
+            itable_entries: HashMap::new(),
+            function_map: HashMap::new(),
+            host_function_map: HashMap::new(),
+            witness_dumper,
+            // #[cfg(feature="continuation")]
+            fid_of_entry: 0, // change when initializing module
+            prev_eid: 0,
+            cur_imtable: InitMemoryTable::default(),
+            cur_state: InitializationState::default(), // change when setting fid_of_entry
         }
     }
 
@@ -114,8 +156,116 @@ impl Tracer {
 }
 
 impl Tracer {
+    pub(crate) fn dump_witness(&mut self, is_last_slice: bool) {
+        // keep etable eid
+        self.prev_eid = self.eid() - 1;
+        let mut etable = std::mem::take(&mut self.etable);
+        let etable_entires = etable.entries_mut();
+        // If it is not the last slice, push a step to keep eid correct.
+        if !is_last_slice {
+            let last_entry = etable_entires.last().unwrap().clone();
+            self.etable = EventTable::new(vec![last_entry])
+        }
+
+        let static_jtable = Arc::new(
+                self
+                .static_jtable_entries
+                .clone()
+                .try_into()
+                .expect(&format!(
+                    "The number of static frame entries should be {}",
+                    STATIC_FRAME_ENTRY_NUMBER
+                )),
+        );
+
+        let br_table = Arc::new(self.br_table.clone());
+
+        let compilation_tables = CompilationTable {
+            itable: Arc::new(self.itable.clone()),
+            imtable: self.cur_imtable.clone(),
+            br_table: br_table.clone(),
+            elem_table: Arc::new(self.elem_table.clone()),
+            configure_table: Arc::new(self.configure_table),
+            static_jtable: Arc::clone(&static_jtable),
+            initialization_state: self.cur_state.clone(),
+        };
+
+        // update current state
+        self.cur_state =
+            compilation_tables.update_initialization_state(etable_entires, is_last_slice);
+
+        // update current memory table
+        // If it is not the last slice, push a helper step to get the post initialization state.
+        if !is_last_slice {
+            etable_entires.pop();
+        }
+        self.cur_imtable = compilation_tables.update_init_memory_table(etable_entires);
+
+        let post_image_table = CompilationTable {
+            itable: Arc::new(self.itable.clone()),
+            imtable: self.cur_imtable.clone(),
+            br_table,
+            elem_table: Arc::new(self.elem_table.clone()),
+            configure_table: Arc::new(self.configure_table),
+            static_jtable: static_jtable,
+            initialization_state: self.cur_state.clone(),
+        };
+
+        let execution_tables = ExecutionTable {
+            etable,
+            jtable: Arc::new(self.jtable.clone()),
+        };
+
+        self.witness_dumper.borrow_mut().dump(Tables {
+            compilation_tables,
+            execution_tables,
+            post_image_table,
+            is_last_slice,
+        });
+    }
+
+    pub(crate) fn get_prev_eid(&self) -> u32 {
+        self.prev_eid
+    }
+
+    pub(crate) fn slice_capability(&self) -> u32 {
+        self.witness_dumper.borrow().get_capacity() as u32
+    }
+
+    pub fn dump_enabled(&self) -> bool {
+        self.witness_dumper.borrow().dump_enabled()
+    }
+
+    pub(crate) fn set_fid_of_entry(&mut self, fid_of_entry: u32) {
+        self.fid_of_entry = fid_of_entry;
+
+        self.cur_state = InitializationState {
+            eid: 1,
+            fid: fid_of_entry,
+            iid: 0,
+            frame_id: 0,
+            sp: DEFAULT_VALUE_STACK_LIMIT as u32 - 1,
+
+            host_public_inputs: 1,
+            context_in_index: 1,
+            context_out_index: 1,
+            external_host_call_call_index: 1,
+
+            initial_memory_pages: self.configure_table.init_memory_pages,
+            maximal_memory_pages: self.configure_table.maximal_memory_pages,
+            #[cfg(feature = "continuation")]
+            jops: 0,
+        };
+    }
+
+    pub fn get_fid_of_entry(&self) -> u32 {
+        self.fid_of_entry
+    }
+}
+
+impl Tracer {
     pub(crate) fn push_init_memory(&mut self, memref: MemoryRef) {
-        // one page contains 64KB*1024/8=8192 u64 entries
+        // one page contains 64KB/8 = 64*1024/8=8192 u64 entries
         const ENTRIES: u32 = 8192;
 
         let pages = (*memref).limits().initial();
@@ -130,6 +280,10 @@ impl Tracer {
                     .push(false, true, i, VarType::I64, u64::from_le_bytes(buf));
             }
         }
+
+        // update current memory table
+        self.cur_imtable = self.imtable.finalized();
+        self.br_table = self.itable.create_brtable();
     }
 
     pub(crate) fn push_global(&mut self, globalidx: u32, globalref: &GlobalRef) {
@@ -248,6 +402,22 @@ impl Tracer {
 
                     self.function_lookup
                         .push((func.clone(), func_index_in_itable));
+
+                    match *func.as_internal() {
+                        FuncInstanceInternal::Internal {
+                            image_func_index, ..
+                        } => {
+                            self.function_map
+                                .insert(image_func_index, func_index_in_itable);
+                        }
+                        FuncInstanceInternal::Host {
+                            host_func_index, ..
+                        } => {
+                            self.host_function_map
+                                .insert(host_func_index, func_index_in_itable);
+                        }
+                    }
+
                     self.function_index_translation.insert(
                         func_index,
                         FuncDesc {
@@ -305,6 +475,10 @@ impl Tracer {
                                         pc,
                                         instruction.into(&self.function_index_translation),
                                     );
+                                    self.itable_entries.insert(
+                                        ((funcdesc.index_within_jtable as u64) << 32) + pc as u64,
+                                        self.itable.entries().last().unwrap().clone(),
+                                    );
                                 } else {
                                     break;
                                 }
@@ -321,24 +495,23 @@ impl Tracer {
     }
 
     pub fn lookup_function(&self, function: &FuncRef) -> u32 {
-        let pos = self
-            .function_lookup
-            .iter()
-            .position(|m| m.0 == *function)
-            .unwrap();
-        self.function_lookup.get(pos).unwrap().1
+        match *function.as_internal() {
+            FuncInstanceInternal::Internal {
+                image_func_index, ..
+            } => *self.function_map.get(&image_func_index).unwrap(),
+            FuncInstanceInternal::Host {
+                host_func_index, ..
+            } => *self.host_function_map.get(&host_func_index).unwrap(),
+        }
     }
 
     pub fn lookup_ientry(&self, function: &FuncRef, pos: u32) -> InstructionTableEntry {
         let function_idx = self.lookup_function(function);
 
-        for ientry in self.itable.entries() {
-            if ientry.fid == function_idx && ientry.iid as u32 == pos {
-                return ientry.clone();
-            }
-        }
+        let key = ((function_idx as u64) << 32) + pos as u64;
+        self.itable_entries.get(&key).unwrap().clone()
 
-        unreachable!()
+        // unreachable!()
     }
 
     pub fn lookup_first_inst(&self, function: &FuncRef) -> InstructionTableEntry {

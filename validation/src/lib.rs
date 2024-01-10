@@ -16,8 +16,9 @@ pub const DEFAULT_MEMORY_INDEX: u32 = 0;
 /// Index of default table.
 pub const DEFAULT_TABLE_INDEX: u32 = 0;
 
-/// Maximal number of pages that a wasm instance supports.
-pub const LINEAR_MEMORY_MAX_PAGES: u32 = 65536;
+/// Maximal number of pages that a wasm instance supports,
+/// if it's 65536, tracer would be out of memory
+pub const LINEAR_MEMORY_MAX_PAGES: u32 = 1024;
 
 use alloc::{string::String, vec::Vec};
 use core::fmt;

@@ -36,6 +36,7 @@ std = [
     "parity-wasm/std",
     "validation/std",
 ]
+continuation = ["specs/continuation"]
 # Enables OS supported virtual memory.
 #
 # Note
