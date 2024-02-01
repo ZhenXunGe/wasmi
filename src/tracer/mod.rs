@@ -70,11 +70,12 @@ impl Tracer {
         host_plugin_lookup: HashMap<usize, HostFunctionDesc>,
         phantom_functions: &Vec<String>,
         dry_run: bool,
+        event_table_capability: usize,
     ) -> Self {
         Tracer {
             itable: InstructionTableInternal::default(),
             imtable: IMTable::default(),
-            etable: EventTable::default(),
+            etable: EventTable::with_capability(event_table_capability),
             last_jump_eid: vec![],
             jtable: JumpTable::default(),
             elem_table: ElemTable::default(),
