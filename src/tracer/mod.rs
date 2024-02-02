@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use hugepage::hugepage::HugeTlbAllocator;
 use regex::Regex;
 use specs::{
     brtable::{ElemEntry, ElemTable},
@@ -43,7 +44,7 @@ pub struct Observer {
 pub struct Tracer {
     pub itable: InstructionTableInternal,
     pub imtable: IMTable,
-    pub etable: EventTable,
+    pub etable: EventTable<HugeTlbAllocator>,
     pub jtable: JumpTable,
     pub elem_table: ElemTable,
     pub configure_table: ConfigureTable,
@@ -75,7 +76,7 @@ impl Tracer {
         Tracer {
             itable: InstructionTableInternal::default(),
             imtable: IMTable::default(),
-            etable: EventTable::with_capability(event_table_capability),
+            etable: EventTable::with_capability_in(event_table_capability, HugeTlbAllocator),
             last_jump_eid: vec![],
             jtable: JumpTable::default(),
             elem_table: ElemTable::default(),

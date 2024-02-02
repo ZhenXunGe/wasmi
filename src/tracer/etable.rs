@@ -1,3 +1,4 @@
+use hugepage::hugepage::HugeTlbAllocator;
 use parity_wasm::elements::ValueType;
 use specs::{
     etable::{EventTable, EventTableEntry},
@@ -134,7 +135,7 @@ pub(crate) trait ETable {
     );
 }
 
-impl ETable for EventTable {
+impl ETable for EventTable<HugeTlbAllocator> {
     fn get_latest_eid(&self) -> u32 {
         self.entries().last().unwrap().eid
     }
