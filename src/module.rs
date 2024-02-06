@@ -28,6 +28,7 @@ use alloc::{
 use core::{
     cell::{Ref, RefCell},
     fmt,
+    ops::Deref,
 };
 use parity_wasm::elements::{External, InitExpr, Instruction, Internal, ResizableLimits, Type};
 use specs::configure_table::ConfigureTable;
@@ -184,6 +185,23 @@ impl ModuleInstance {
             memories: RefCell::new(Vec::new()),
             globals: RefCell::new(Vec::new()),
             exports: RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    pub fn deep_clone(&self) -> Self {
+        ModuleInstance {
+            funcs: self.funcs.clone(),
+            signatures: self.signatures.clone(),
+            tables: self.tables.clone(),
+            memories: RefCell::new(
+                self.memories
+                    .borrow()
+                    .iter()
+                    .map(|x| MemoryRef(Rc::new(x.deref().clone())))
+                    .collect(),
+            ),
+            globals: self.globals.clone(),
+            exports: self.exports.clone(),
         }
     }
 
@@ -808,6 +826,13 @@ pub struct NotStartedModuleRef<'a> {
 }
 
 impl<'a> NotStartedModuleRef<'a> {
+    pub fn deep_clone(&self) -> Self {
+        Self {
+            loaded_module: self.loaded_module,
+            instance: ModuleRef(Rc::new(self.instance.deref().deep_clone())),
+        }
+    }
+
     /// Returns not fully initialized instance.
     ///
     /// To fully initialize the instance you need to call either [`run_start`] or

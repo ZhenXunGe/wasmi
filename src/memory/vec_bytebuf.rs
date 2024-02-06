@@ -2,7 +2,7 @@
 
 use alloc::{string::String, vec::Vec};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub struct ByteBuf {
     buf: Vec<u8>,
 }
