@@ -618,11 +618,11 @@ impl ModuleInstance {
     /// [`NotStartedModuleRef`]: struct.NotStartedModuleRef.html
     /// [`ImportResolver`]: trait.ImportResolver.html
     /// [`assert_no_start`]: struct.NotStartedModuleRef.html#method.assert_no_start
-    pub fn new<'m, I: ImportResolver>(
-        loaded_module: &'m Module,
+    pub fn new< I: ImportResolver>(
+        loaded_module: Rc<Module>,
         imports: &I,
         tracer: Option<Rc<RefCell<Tracer>>>,
-    ) -> Result<NotStartedModuleRef<'m>, Error> {
+    ) -> Result<NotStartedModuleRef, Error> {
         let module = loaded_module.module();
 
         let mut extern_vals = Vec::new();
@@ -802,12 +802,13 @@ impl ModuleInstance {
 /// [`run_start`]: #method.run_start
 /// [`assert_no_start`]: #method.assert_no_start
 /// [`not_started_instance`]: #method.not_started_instance
-pub struct NotStartedModuleRef<'a> {
-    loaded_module: &'a Module,
+#[derive(Clone)]
+pub struct NotStartedModuleRef {
+    loaded_module: Rc<Module>,
     instance: ModuleRef,
 }
 
-impl<'a> NotStartedModuleRef<'a> {
+impl NotStartedModuleRef {
     /// Returns not fully initialized instance.
     ///
     /// To fully initialize the instance you need to call either [`run_start`] or
@@ -847,7 +848,7 @@ impl<'a> NotStartedModuleRef<'a> {
         state: &mut E,
         tracer: Rc<RefCell<Tracer>>,
     ) -> Result<ModuleRef, Trap> {
-        {
+        {©
             tracer.borrow_mut().last_jump_eid.push(0);
         }
 
