@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use core::cell::RefCell;
+use std::{collections::HashMap, rc::Rc};
 
 use regex::Regex;
 use specs::{
@@ -27,22 +28,22 @@ pub mod etable;
 pub mod imtable;
 pub mod phantom;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FuncDesc {
     pub ftype: FunctionType,
     pub signature: Signature,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Observer {
     pub counter: usize,
     pub is_in_phantom: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tracer {
-    pub itable: InstructionTableInternal,
-    pub imtable: IMTable,
+    pub itable: Rc<RefCell<InstructionTableInternal>>,
+    pub imtable: Rc<RefCell<IMTable>>,
     pub etable: EventTable,
     pub jtable: JumpTable,
     pub elem_table: ElemTable,
@@ -72,8 +73,8 @@ impl Tracer {
         dry_run: bool,
     ) -> Self {
         Tracer {
-            itable: InstructionTableInternal::default(),
-            imtable: IMTable::default(),
+            itable: Rc::new(RefCell::new(InstructionTableInternal::default())),
+            imtable: Rc::new(RefCell::new(IMTable::default())),
             etable: EventTable::default(),
             last_jump_eid: vec![],
             jtable: JumpTable::default(),
@@ -145,11 +146,11 @@ impl Tracer {
         for i in 0..(pages * 8192) {
             let mut buf = [0u8; 8];
             (*memref).get_into(i * 8, &mut buf).unwrap();
-            self.imtable
+            self.imtable.borrow_mut()
                 .push(false, true, i, i, VarType::I64, u64::from_le_bytes(buf));
         }
 
-        self.imtable.push(
+        self.imtable.borrow_mut().push(
             false,
             true,
             pages * 8192,
@@ -166,7 +167,7 @@ impl Tracer {
     pub(crate) fn push_global(&mut self, globalidx: u32, globalref: &GlobalRef) {
         let vtype = globalref.elements_value_type().into();
 
-        self.imtable.push(
+        self.imtable.borrow_mut().push(
             true,
             globalref.is_mutable(),
             globalidx,
@@ -310,7 +311,7 @@ impl Tracer {
                         );
 
                         for (iid, inst) in instructions.into_iter().enumerate() {
-                            self.itable.push(
+                            self.itable.borrow_mut().push(
                                 func_index,
                                 function_name.clone(),
                                 iid as u32,
@@ -324,7 +325,7 @@ impl Tracer {
                             loop {
                                 let pc = iter.position();
                                 if let Some(instruction) = iter.next() {
-                                    let _ = self.itable.push(
+                                    let _ = self.itable.borrow_mut().push(
                                         func_index,
                                         function_name.clone(),
                                         pc,

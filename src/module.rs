@@ -28,7 +28,9 @@ use alloc::{
 use core::{
     cell::{Ref, RefCell},
     fmt,
+    ops::Deref,
 };
+use std::sync::Arc;
 use parity_wasm::elements::{External, InitExpr, Instruction, Internal, ResizableLimits, Type};
 use specs::configure_table::ConfigureTable;
 use validation::{DEFAULT_MEMORY_INDEX, DEFAULT_TABLE_INDEX};
@@ -184,6 +186,23 @@ impl ModuleInstance {
             memories: RefCell::new(Vec::new()),
             globals: RefCell::new(Vec::new()),
             exports: RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    pub fn deep_clone(&self) -> Self {
+        ModuleInstance {
+            funcs: self.funcs.clone(),
+            signatures: self.signatures.clone(),
+            tables: self.tables.clone(),
+            memories: RefCell::new(
+                self.memories
+                    .borrow()
+                    .iter()
+                    .map(|x| MemoryRef(Rc::new(x.deref().clone())))
+                    .collect(),
+            ),
+            globals: self.globals.clone(),
+            exports: self.exports.clone(),
         }
     }
 
@@ -462,14 +481,14 @@ impl ModuleInstance {
     ///
     /// [new]: #method.new
     /// [ExternVal]: https://webassembly.github.io/spec/core/exec/runtime.html#syntax-externval
-    pub fn with_externvals<'a, 'i, I: Iterator<Item = &'i ExternVal>>(
-        loaded_module: &'a Module,
+    pub fn with_externvals<'i, I: Iterator<Item = &'i ExternVal>>(
+        loaded_module: Arc<Module>,
         extern_vals: I,
         tracer: Option<Rc<RefCell<Tracer>>>,
-    ) -> Result<NotStartedModuleRef<'a>, Error> {
+    ) -> Result<NotStartedModuleRef, Error> {
         let module = loaded_module.module();
 
-        let module_ref = ModuleInstance::alloc_module(loaded_module, extern_vals, tracer.clone())?;
+        let module_ref = ModuleInstance::alloc_module(&loaded_module, extern_vals, tracer.clone())?;
 
         if let Some(tracer) = tracer.clone() {
             tracer.borrow_mut().register_module_instance(&module_ref);
@@ -618,11 +637,11 @@ impl ModuleInstance {
     /// [`NotStartedModuleRef`]: struct.NotStartedModuleRef.html
     /// [`ImportResolver`]: trait.ImportResolver.html
     /// [`assert_no_start`]: struct.NotStartedModuleRef.html#method.assert_no_start
-    pub fn new<'m, I: ImportResolver>(
-        loaded_module: &'m Module,
+    pub fn new<I: ImportResolver>(
+        loaded_module: Arc<Module>,
         imports: &I,
         tracer: Option<Rc<RefCell<Tracer>>>,
-    ) -> Result<NotStartedModuleRef<'m>, Error> {
+    ) -> Result<NotStartedModuleRef, Error> {
         let module = loaded_module.module();
 
         let mut extern_vals = Vec::new();
@@ -802,12 +821,21 @@ impl ModuleInstance {
 /// [`run_start`]: #method.run_start
 /// [`assert_no_start`]: #method.assert_no_start
 /// [`not_started_instance`]: #method.not_started_instance
-pub struct NotStartedModuleRef<'a> {
-    loaded_module: &'a Module,
+pub struct NotStartedModuleRef {
+    loaded_module: Arc<Module>,
     instance: ModuleRef,
 }
 
-impl<'a> NotStartedModuleRef<'a> {
+unsafe impl Send for NotStartedModuleRef{}
+
+impl NotStartedModuleRef {
+    pub fn deep_clone(&self) -> Self {
+        Self {
+            loaded_module: self.loaded_module.clone(),
+            instance: ModuleRef(Rc::new(self.instance.deref().deep_clone())),
+        }
+    }
+
     /// Returns not fully initialized instance.
     ///
     /// To fully initialize the instance you need to call either [`run_start`] or
