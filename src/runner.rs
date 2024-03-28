@@ -38,7 +38,7 @@ use specs::{
     mtable::{MemoryReadSize, MemoryStoreSize, VarType},
     step::StepInfo,
 };
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 use validation::{DEFAULT_MEMORY_INDEX, DEFAULT_TABLE_INDEX};
 
 /// Maximum number of bytes on the value stack.
@@ -401,6 +401,12 @@ impl Interpreter {
                                     .borrow()
                                     .is_phantom_function(&nested_context.function)
                                 {
+                                    if self.mask_tracer.is_empty() {
+                                        if let Some(memory) = function_context.memory.as_ref() {
+                                            *memory.buffer_cache.borrow_mut() =
+                                                Some((memory.current_size(), HashMap::default()));
+                                        }
+                                    }
                                     self.push_phantom_frame(self.value_stack.sp as u32);
                                 }
                             }
@@ -2096,9 +2102,21 @@ impl Interpreter {
                             let sp_before = self.pop_phantom_frame().unwrap();
 
                             if self.mask_tracer.is_empty() {
+                                let origin_memory_pages =
+                                    if let Some(memory) = function_context.memory.as_mut() {
+                                        let mut buf_cache = memory.buffer_cache.borrow_mut();
+                                        let origin_memory_pages = buf_cache.as_ref().unwrap().0;
+                                        memory.shrink(origin_memory_pages).unwrap();
+                                        *buf_cache = None;
+
+                                        origin_memory_pages.0
+                                    } else {
+                                        0
+                                    };
+
                                 tracer.borrow_mut().fill_trace(
                                     sp_before,
-                                    current_memory as u32,
+                                    origin_memory_pages as u32,
                                     &function_context.function,
                                     function_context.function.signature(),
                                     if let isa::Keep::Single(t) = drop_keep.keep {
