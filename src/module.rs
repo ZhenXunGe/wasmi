@@ -5,6 +5,7 @@ use crate::{
     imports::ImportResolver,
     memory::MemoryRef,
     memory_units::Pages,
+    monitor::Monitor,
     nan_preserving_float::{F32, F64},
     runner::StackRecycler,
     table::TableRef,
@@ -187,19 +188,19 @@ impl ModuleInstance {
         }
     }
 
-    pub(crate) fn memory_by_index(&self, idx: u32) -> Option<MemoryRef> {
+    pub fn memory_by_index(&self, idx: u32) -> Option<MemoryRef> {
         self.memories.borrow_mut().get(idx as usize).cloned()
     }
 
-    pub(crate) fn table_by_index(&self, idx: u32) -> Option<TableRef> {
+    pub fn table_by_index(&self, idx: u32) -> Option<TableRef> {
         self.tables.borrow_mut().get(idx as usize).cloned()
     }
 
-    pub(crate) fn global_by_index(&self, idx: u32) -> Option<GlobalRef> {
+    pub fn global_by_index(&self, idx: u32) -> Option<GlobalRef> {
         self.globals.borrow_mut().get(idx as usize).cloned()
     }
 
-    pub(crate) fn func_by_index(&self, idx: u32) -> Option<FuncRef> {
+    pub fn func_by_index(&self, idx: u32) -> Option<FuncRef> {
         self.funcs.borrow().get(idx as usize).cloned()
     }
 
@@ -466,6 +467,7 @@ impl ModuleInstance {
         loaded_module: &'a Module,
         extern_vals: I,
         tracer: Option<Rc<RefCell<Tracer>>>,
+        monitor: Option<&mut impl Monitor>,
     ) -> Result<NotStartedModuleRef<'a>, Error> {
         let module = loaded_module.module();
 
@@ -556,6 +558,14 @@ impl ModuleInstance {
             }
         }
 
+        monitor
+            .map(|monitor| {
+                monitor.register_module(module, &module_ref)?;
+
+                Ok::<_, Error>(())
+            })
+            .transpose()?;
+
         Ok(NotStartedModuleRef {
             loaded_module,
             instance: module_ref,
@@ -626,6 +636,7 @@ impl ModuleInstance {
         loaded_module: &'m Module,
         imports: &I,
         tracer: Option<Rc<RefCell<Tracer>>>,
+        monitor: Option<&mut impl Monitor>,
     ) -> Result<NotStartedModuleRef<'m>, Error> {
         let module = loaded_module.module();
 
@@ -665,7 +676,8 @@ impl ModuleInstance {
             extern_vals.push(extern_val);
         }
 
-        let module_ref = Self::with_externvals(loaded_module, extern_vals.iter(), tracer.clone());
+        let module_ref =
+            Self::with_externvals(loaded_module, extern_vals.iter(), tracer.clone(), monitor);
 
         module_ref
     }
@@ -734,6 +746,7 @@ impl ModuleInstance {
         args: &[RuntimeValue],
         externals: &mut E,
         tracer: Rc<RefCell<Tracer>>,
+        monitor: &mut impl Monitor,
     ) -> Result<Option<RuntimeValue>, Error> {
         let func_instance = self.func_by_name(func_name)?;
 
@@ -741,9 +754,11 @@ impl ModuleInstance {
             let mut tracer = tracer.borrow_mut();
 
             tracer.last_jump_eid.push(0);
+            monitor.invoke_exported_function_pre_hook();
         }
 
-        FuncInstance::invoke_trace(&func_instance, args, externals, tracer).map_err(Error::Trap)
+        FuncInstance::invoke_trace(&func_instance, args, externals, tracer, monitor)
+            .map_err(Error::Trap)
     }
 
     /// Invoke exported function by a name using recycled stacks.
@@ -850,9 +865,11 @@ impl<'a> NotStartedModuleRef<'a> {
         self,
         state: &mut E,
         tracer: Rc<RefCell<Tracer>>,
+        monitor: &mut impl Monitor,
     ) -> Result<ModuleRef, Trap> {
         {
             tracer.borrow_mut().last_jump_eid.push(0);
+            monitor.invoke_exported_function_pre_hook();
         }
 
         if let Some(start_fn_idx) = self.loaded_module.module().start_section() {
@@ -860,7 +877,7 @@ impl<'a> NotStartedModuleRef<'a> {
                 .instance
                 .func_by_index(start_fn_idx)
                 .expect("Due to validation start function should exists");
-            FuncInstance::invoke_trace(&start_func, &[], state, tracer)?;
+            FuncInstance::invoke_trace(&start_func, &[], state, tracer, monitor)?;
         }
         Ok(self.instance)
     }
@@ -992,7 +1009,8 @@ mod tests {
 			"#,
         );
         let module =
-            ModuleInstance::new(&module_with_start, &ImportsBuilder::default(), None).unwrap();
+            ModuleInstance::new(&module_with_start, &ImportsBuilder::default(), None, None)
+                .unwrap();
         assert!(!module.has_start());
         module.assert_no_start();
     }
@@ -1015,6 +1033,7 @@ mod tests {
             ),)]
             .iter(),
             None,
+            None
         )
         .is_ok());
 
@@ -1027,12 +1046,14 @@ mod tests {
             ]
             .iter(),
             None,
+            None
         )
         .is_err());
 
         // externval vector is shorter than import count.
         assert!(
-            ModuleInstance::with_externvals(&module_with_single_import, [].iter(), None).is_err()
+            ModuleInstance::with_externvals(&module_with_single_import, [].iter(), None, None)
+                .is_err()
         );
 
         // externval vector has an unexpected type.
@@ -1044,6 +1065,7 @@ mod tests {
             ),)]
             .iter(),
             None,
+            None
         )
         .is_err());
     }

@@ -7,6 +7,7 @@ use crate::{
     memory::MemoryRef,
     memory_units::Pages,
     module::ModuleRef,
+    monitor::Monitor,
     nan_preserving_float::{F32, F64},
     tracer::{etable::RunInstructionTracePre, Tracer},
     value::{
@@ -72,7 +73,7 @@ impl ValueInternal {
     }
 }
 
-trait FromValueInternal
+pub trait FromValueInternal
 where
     Self: Sized,
 {
@@ -191,7 +192,7 @@ enum RunResult {
 }
 
 /// Function interpreter.
-pub struct Interpreter {
+pub struct Interpreter<'a> {
     value_stack: ValueStack,
     call_stack: CallStack,
     return_type: Option<ValueType>,
@@ -199,14 +200,15 @@ pub struct Interpreter {
     scratch: Vec<RuntimeValue>,
     pub(crate) tracer: Option<Rc<RefCell<Tracer>>>,
     mask_tracer: Vec<u32>,
+    pub(crate) monitor: Option<&'a mut dyn Monitor>,
 }
 
-impl Interpreter {
+impl<'m> Interpreter<'m> {
     pub fn new(
         func: &FuncRef,
         args: &[RuntimeValue],
         mut stack_recycler: Option<&mut StackRecycler>,
-    ) -> Result<Interpreter, Trap> {
+    ) -> Result<Interpreter<'m>, Trap> {
         let mut value_stack = StackRecycler::recreate_value_stack(&mut stack_recycler);
         for &arg in args {
             let arg = arg.into();
@@ -231,6 +233,7 @@ impl Interpreter {
             scratch: Vec::new(),
             tracer: None,
             mask_tracer: vec![],
+            monitor: None,
         })
     }
 
@@ -373,6 +376,9 @@ impl Interpreter {
                         FuncInstanceInternal::Internal { .. } => {
                             let nested_context = FunctionContext::new(nested_func.clone());
 
+                            self.monitor
+                                .as_mut()
+                                .map(|monitor| monitor.invoke_call_pre_hook(todo!(), todo!()));
                             if let Some(tracer) = self.get_tracer_if_active() {
                                 let mut tracer = tracer.borrow_mut();
                                 let callee_fid = tracer.lookup_function(&nested_func);
@@ -443,6 +449,9 @@ impl Interpreter {
                                     .map_err(Trap::from)?;
                             }
 
+                            self.monitor
+                                .as_mut()
+                                .map(|monitor| monitor.invoke_call_host_post_hook(return_val));
                             if let Some(return_val) = return_val {
                                 if let Some(tracer) = self.get_tracer_if_active() {
                                     let mut tracer = (*tracer).borrow_mut();
@@ -2034,6 +2043,13 @@ impl Interpreter {
             let pre_status = self.get_tracer_if_active().map_or(None, |_| {
                 self.run_instruction_pre(function_context, &instruction)
             });
+            self.monitor.as_mut().map(|monitor| {
+                monitor.invoke_instruction_pre_hook(
+                    &self.value_stack,
+                    &function_context,
+                    &instruction,
+                )
+            });
 
             let current_memory = {
                 function_context
@@ -2066,7 +2082,21 @@ impl Interpreter {
                 }};
             }
 
-            match self.run_instruction(function_context, &instruction)? {
+            let outcome = self.run_instruction(function_context, &instruction)?;
+
+            self.monitor.as_mut().map(|monitor| {
+                monitor.invoke_instruction_post_hook(
+                    todo!(),
+                    pc,
+                    sp.try_into().unwrap(),
+                    current_memory.try_into().unwrap(),
+                    &self.value_stack,
+                    &function_context,
+                    &instruction,
+                )
+            });
+
+            match outcome {
                 InstructionOutcome::RunNextInstruction => {
                     trace_post!();
                 }
@@ -3011,7 +3041,7 @@ impl Interpreter {
 }
 
 /// Function execution context.
-struct FunctionContext {
+pub struct FunctionContext {
     /// Is context initialized.
     pub is_initialized: bool,
     /// Internal function reference.
@@ -3077,7 +3107,7 @@ impl fmt::Debug for FunctionContext {
     }
 }
 
-fn effective_address(address: u32, offset: u32) -> Result<u32, TrapCode> {
+pub fn effective_address(address: u32, offset: u32) -> Result<u32, TrapCode> {
     match offset.checked_add(address) {
         None => Err(TrapCode::MemoryAccessOutOfBounds),
         Some(address) => Ok(address),
@@ -3118,7 +3148,7 @@ pub fn check_function_args(signature: &Signature, args: &[RuntimeValue]) -> Resu
     Ok(())
 }
 
-struct ValueStack {
+pub struct ValueStack {
     buf: Box<[ValueInternal]>,
     /// Index of the first free place in the stack.
     sp: usize,
@@ -3174,11 +3204,11 @@ impl ValueStack {
     }
 
     #[inline]
-    fn top(&self) -> &ValueInternal {
+    pub fn top(&self) -> &ValueInternal {
         self.pick(1)
     }
 
-    fn pick(&self, depth: usize) -> &ValueInternal {
+    pub fn pick(&self, depth: usize) -> &ValueInternal {
         &self.buf[self.sp - depth]
     }
 

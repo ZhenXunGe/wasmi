@@ -126,7 +126,7 @@ pub enum Reloc {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BrTargets<'a> {
-    stream: &'a [InstructionInternal],
+    pub stream: &'a [InstructionInternal],
 }
 
 impl<'a> BrTargets<'a> {
@@ -1089,7 +1089,7 @@ impl<'a> Into<u32> for Instruction<'a> {
 /// borrows the list of instructions and returns targets by reading it.
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
 #[allow(clippy::upper_case_acronyms)]
-pub(crate) enum InstructionInternal {
+pub enum InstructionInternal {
     GetLocal(u32, ValueType),
     SetLocal(u32, ValueType),
     TeeLocal(u32, ValueType),
