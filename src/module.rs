@@ -32,6 +32,7 @@ use core::{
 };
 use parity_wasm::elements::{External, InitExpr, Instruction, Internal, ResizableLimits, Type};
 use specs::configure_table::ConfigureTable;
+use std::collections::HashMap;
 use validation::{DEFAULT_MEMORY_INDEX, DEFAULT_TABLE_INDEX};
 
 /// Reference to a [`ModuleInstance`].
@@ -174,6 +175,8 @@ pub struct ModuleInstance {
     memories: RefCell<Vec<MemoryRef>>,
     globals: RefCell<Vec<GlobalRef>>,
     pub exports: RefCell<BTreeMap<String, ExternVal>>,
+
+    funcs_index: RefCell<HashMap<FuncRef, u32>>,
 }
 
 impl ModuleInstance {
@@ -185,6 +188,8 @@ impl ModuleInstance {
             memories: RefCell::new(Vec::new()),
             globals: RefCell::new(Vec::new()),
             exports: RefCell::new(BTreeMap::new()),
+
+            funcs_index: RefCell::new(HashMap::new()),
         }
     }
 
@@ -204,6 +209,10 @@ impl ModuleInstance {
         self.funcs.borrow().get(idx as usize).cloned()
     }
 
+    pub fn func_index_by_func_ref(&self, func: &FuncRef) -> u32 {
+        *self.funcs_index.borrow().get(func).unwrap()
+    }
+
     pub(crate) fn signature_by_index(&self, idx: u32) -> Option<Rc<Signature>> {
         self.signatures.borrow().get(idx as usize).cloned()
     }
@@ -213,6 +222,9 @@ impl ModuleInstance {
     }
 
     fn push_func(&self, func: FuncRef) {
+        let index = self.funcs().borrow().len() as u32;
+
+        self.funcs_index.borrow_mut().insert(func.clone(), index);
         self.funcs.borrow_mut().push(func);
     }
 

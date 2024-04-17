@@ -2086,7 +2086,9 @@ impl<'m> Interpreter<'m> {
 
             self.monitor.as_mut().map(|monitor| {
                 monitor.invoke_instruction_post_hook(
-                    todo!(),
+                    function_context
+                        .module
+                        .func_index_by_func_ref(&function_context.function),
                     pc,
                     sp.try_into().unwrap(),
                     current_memory.try_into().unwrap(),

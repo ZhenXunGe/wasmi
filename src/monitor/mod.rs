@@ -1,3 +1,4 @@
+use parity_wasm::elements::Module;
 use wasmi_core::Value;
 
 use crate::{
@@ -18,11 +19,7 @@ pub trait Monitor {
     ) {
     }
 
-    fn register_module(
-        &mut self,
-        module: &parity_wasm::elements::Module,
-        module_ref: &ModuleRef,
-    ) -> Result<(), Error> {
+    fn register_module(&mut self, module: &Module, module_ref: &ModuleRef) -> Result<(), Error> {
         Ok(())
     }
 
