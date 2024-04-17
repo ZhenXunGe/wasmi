@@ -467,7 +467,7 @@ impl ModuleInstance {
         loaded_module: &'a Module,
         extern_vals: I,
         tracer: Option<Rc<RefCell<Tracer>>>,
-        monitor: Option<&mut impl Monitor>,
+        monitor: Option<&mut dyn Monitor>,
     ) -> Result<NotStartedModuleRef<'a>, Error> {
         let module = loaded_module.module();
 
@@ -636,7 +636,7 @@ impl ModuleInstance {
         loaded_module: &'m Module,
         imports: &I,
         tracer: Option<Rc<RefCell<Tracer>>>,
-        monitor: Option<&mut impl Monitor>,
+        monitor: Option<&mut dyn Monitor>,
     ) -> Result<NotStartedModuleRef<'m>, Error> {
         let module = loaded_module.module();
 
@@ -746,7 +746,7 @@ impl ModuleInstance {
         args: &[RuntimeValue],
         externals: &mut E,
         tracer: Rc<RefCell<Tracer>>,
-        monitor: &mut impl Monitor,
+        monitor: &mut dyn Monitor,
     ) -> Result<Option<RuntimeValue>, Error> {
         let func_instance = self.func_by_name(func_name)?;
 
@@ -865,7 +865,7 @@ impl<'a> NotStartedModuleRef<'a> {
         self,
         state: &mut E,
         tracer: Rc<RefCell<Tracer>>,
-        monitor: &mut impl Monitor,
+        monitor: &mut dyn Monitor,
     ) -> Result<ModuleRef, Trap> {
         {
             tracer.borrow_mut().last_jump_eid.push(0);

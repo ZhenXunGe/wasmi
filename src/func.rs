@@ -214,7 +214,7 @@ impl FuncInstance {
         args: &[RuntimeValue],
         externals: &mut E,
         tracer: Rc<RefCell<Tracer>>,
-        monitor: &mut impl Monitor,
+        monitor: &mut dyn Monitor,
     ) -> Result<Option<RuntimeValue>, Trap> {
         check_function_args(func.signature(), args)?;
         match *func.as_internal() {
