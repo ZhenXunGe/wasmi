@@ -34,7 +34,7 @@ pub struct FuncDesc {
     pub signature: Signature,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Observer {
     pub counter: usize,
     pub is_in_phantom: bool,
@@ -168,12 +168,13 @@ impl Tracer {
     }
 
     pub(crate) fn push_elem(&mut self, table_idx: u32, offset: u32, func_idx: u32, type_idx: u32) {
-        self.elem_table.insert(ElemEntry {
-            table_idx,
-            type_idx,
-            offset,
-            func_idx,
-        })
+        todo!()
+        // self.elem_table.insert(ElemEntry {
+        //     table_idx,
+        //     type_idx,
+        //     offset,
+        //     func_idx,
+        // })
     }
 
     pub(crate) fn push_type_of_func_ref(&mut self, func: FuncRef, type_idx: u32) {
@@ -216,130 +217,130 @@ impl Tracer {
             .1
     }
 
-    pub(crate) fn register_module_instance(&mut self, module_instance: &ModuleRef) {
-        {
-            let mut func_index = 0;
+    // pub(crate) fn register_module_instance(&mut self, module_instance: &ModuleRef) {
+    //     {
+    //         let mut func_index = 0;
 
-            loop {
-                if let Some(func) = module_instance.func_by_index(func_index) {
-                    if Some(&func) == self.wasm_input_func_ref.as_ref() {
-                        self.wasm_input_func_idx = Some(func_index)
-                    }
+    //         loop {
+    //             if let Some(func) = module_instance.func_by_index(func_index) {
+    //                 if Some(&func) == self.wasm_input_func_ref.as_ref() {
+    //                     self.wasm_input_func_idx = Some(func_index)
+    //                 }
 
-                    let ftype = match *func.as_internal() {
-                        crate::func::FuncInstanceInternal::Internal { .. } => {
-                            FunctionType::WasmFunction
-                        }
-                        crate::func::FuncInstanceInternal::Host {
-                            host_func_index, ..
-                        } => {
-                            let plugin_desc = self.lookup_host_plugin(host_func_index);
+    //                 let ftype = match *func.as_internal() {
+    //                     crate::func::FuncInstanceInternal::Internal { .. } => {
+    //                         FunctionType::WasmFunction
+    //                     }
+    //                     crate::func::FuncInstanceInternal::Host {
+    //                         host_func_index, ..
+    //                     } => {
+    //                         let plugin_desc = self.lookup_host_plugin(host_func_index);
 
-                            match plugin_desc {
-                                HostFunctionDesc::Internal {
-                                    name,
-                                    op_index_in_plugin,
-                                    plugin,
-                                } => FunctionType::HostFunction {
-                                    plugin,
-                                    function_index: host_func_index,
-                                    function_name: name,
-                                    op_index_in_plugin,
-                                },
-                                HostFunctionDesc::External { name, op, sig } => {
-                                    FunctionType::HostFunctionExternal {
-                                        function_name: name,
-                                        op,
-                                        sig,
-                                    }
-                                }
-                            }
-                        }
-                    };
+    //                         match plugin_desc {
+    //                             HostFunctionDesc::Internal {
+    //                                 name,
+    //                                 op_index_in_plugin,
+    //                                 plugin,
+    //                             } => FunctionType::HostFunction {
+    //                                 plugin,
+    //                                 function_index: host_func_index,
+    //                                 function_name: name,
+    //                                 op_index_in_plugin,
+    //                             },
+    //                             HostFunctionDesc::External { name, op, sig } => {
+    //                                 FunctionType::HostFunctionExternal {
+    //                                     function_name: name,
+    //                                     op,
+    //                                     sig,
+    //                                 }
+    //                             }
+    //                         }
+    //                     }
+    //                 };
 
-                    self.function_lookup.insert(func.clone(), func_index);
-                    self.function_desc.insert(
-                        func_index,
-                        FuncDesc {
-                            ftype,
-                            signature: func.signature().clone(),
-                        },
-                    );
-                    func_index = func_index + 1;
-                } else {
-                    break;
-                }
-            }
-        }
+    //                 self.function_lookup.insert(func.clone(), func_index);
+    //                 self.function_desc.insert(
+    //                     func_index,
+    //                     FuncDesc {
+    //                         ftype,
+    //                         signature: func.signature().clone(),
+    //                     },
+    //                 );
+    //                 func_index = func_index + 1;
+    //             } else {
+    //                 break;
+    //             }
+    //         }
+    //     }
 
-        {
-            let phantom_functions = self.phantom_functions.clone();
+    //     {
+    //         let phantom_functions = self.phantom_functions.clone();
 
-            for func_name_regex in phantom_functions {
-                let re = Regex::new(&func_name_regex).unwrap();
+    //         for func_name_regex in phantom_functions {
+    //             let re = Regex::new(&func_name_regex).unwrap();
 
-                for (export_name, export) in module_instance.exports.borrow().iter() {
-                    if re.is_match(export_name) && export.as_func().is_some() {
-                        self.push_phantom_function(export.as_func().unwrap().clone());
-                    }
-                }
-            }
-        }
+    //             for (export_name, export) in module_instance.exports.borrow().iter() {
+    //                 if re.is_match(export_name) && export.as_func().is_some() {
+    //                     self.push_phantom_function(export.as_func().unwrap().clone());
+    //                 }
+    //             }
+    //         }
+    //     }
 
-        // make dry_run ignore itable
-        if self.dry_run() {
-            return;
-        }
+    //     // make dry_run ignore itable
+    //     if self.dry_run() {
+    //         return;
+    //     }
 
-        {
-            let mut func_index = 0;
+    //     {
+    //         let mut func_index = 0;
 
-            loop {
-                if let Some(func) = module_instance.func_by_index(func_index) {
-                    let funcdesc = self.function_desc.get(&func_index).unwrap();
-                    let function_name = self.lookup_function_name(func_index);
+    //         loop {
+    //             if let Some(func) = module_instance.func_by_index(func_index) {
+    //                 let funcdesc = self.function_desc.get(&func_index).unwrap();
+    //                 let function_name = self.lookup_function_name(func_index);
 
-                    if self.is_phantom_function(&func) {
-                        let instructions = PhantomFunction::build_phantom_function_instructions(
-                            &funcdesc.signature,
-                            self.wasm_input_func_idx.unwrap(),
-                        );
+    //                 if self.is_phantom_function(&func) {
+    //                     let instructions = PhantomFunction::build_phantom_function_instructions(
+    //                         &funcdesc.signature,
+    //                         self.wasm_input_func_idx.unwrap(),
+    //                     );
 
-                        for (iid, inst) in instructions.into_iter().enumerate() {
-                            self.itable.push(
-                                func_index,
-                                function_name.clone(),
-                                iid as u32,
-                                inst.into(&self.function_desc),
-                            )
-                        }
-                    } else {
-                        if let Some(body) = func.body() {
-                            let code = &body.code;
-                            let mut iter = code.iterate_from(0);
-                            loop {
-                                let pc = iter.position();
-                                if let Some(instruction) = iter.next() {
-                                    let _ = self.itable.push(
-                                        func_index,
-                                        function_name.clone(),
-                                        pc,
-                                        instruction.into(&self.function_desc),
-                                    );
-                                } else {
-                                    break;
-                                }
-                            }
-                        }
-                    }
+    //                     for (iid, inst) in instructions.into_iter().enumerate() {
+    //                         self.itable.push(
+    //                             func_index,
+    //                             function_name.clone(),
+    //                             iid as u32,
+    //                             inst.into(&self.function_desc),
+    //                         )
+    //                     }
+    //                 } else {
+    //                     if let Some(body) = func.body() {
+    //                         let code = &body.code;
+    //                         let mut iter = code.iterate_from(0);
+    //                         loop {
+    //                             let pc = iter.position();
+    //                             if let Some(instruction) = iter.next() {
+    //                                 let _ = self.itable.push(
+    //                                     func_index,
+    //                                     function_name.clone(),
+    //                                     pc,
+    //                                     instruction.into(&self.function_desc),
+    //                                 );
+    //                             } else {
+    //                                 break;
+    //                             }
+    //                         }
+    //                     }
+    //                 }
 
-                    func_index = func_index + 1;
-                } else {
-                    break;
-                }
-            }
-        }
-    }
+    //                 func_index = func_index + 1;
+    //             } else {
+    //                 break;
+    //             }
+    //         }
+    //     }
+    // }
 
     pub fn lookup_function_name(&self, function: u32) -> String {
         if let Some(name) = self.function_lookup_name.get(&function) {

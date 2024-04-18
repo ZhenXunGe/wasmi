@@ -213,14 +213,12 @@ impl FuncInstance {
         func: &FuncRef,
         args: &[RuntimeValue],
         externals: &mut E,
-        tracer: Rc<RefCell<Tracer>>,
         monitor: &mut dyn Monitor,
     ) -> Result<Option<RuntimeValue>, Trap> {
         check_function_args(func.signature(), args)?;
         match *func.as_internal() {
             FuncInstanceInternal::Internal { .. } => {
                 let mut interpreter = Interpreter::new(func, args, None)?;
-                interpreter.tracer = Some(tracer);
                 interpreter.monitor = Some(monitor);
                 interpreter.start_execution(externals)
             }
