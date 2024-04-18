@@ -53,5 +53,6 @@ pub trait Monitor {
     /// Called after 'call_host' instruction is executed.
     fn invoke_call_host_post_hook(&mut self, return_value: Option<Value>) {}
 
+    #[deprecated]
     fn expose_observer(&self) -> Rc<RefCell<Observer>>;
 }
