@@ -478,16 +478,10 @@ impl ModuleInstance {
     pub fn with_externvals<'a, 'i, I: Iterator<Item = &'i ExternVal>>(
         loaded_module: &'a Module,
         extern_vals: I,
-        // tracer: Option<Rc<RefCell<Tracer>>>,
-        monitor: Option<&mut dyn Monitor>,
     ) -> Result<NotStartedModuleRef<'a>, Error> {
         let module = loaded_module.module();
 
         let module_ref = ModuleInstance::alloc_module(loaded_module, extern_vals)?;
-
-        // if let Some(tracer) = tracer.clone() {
-        //     tracer.borrow_mut().register_module_instance(&module_ref);
-        // }
 
         for element_segment in module
             .elements_section()
@@ -522,20 +516,6 @@ impl ModuleInstance {
                     .func_by_index(*func_idx)
                     .expect("Due to validation funcs from element segments should exists");
 
-                // if let Some(tracer) = tracer.clone() {
-                //     if !tracer.borrow().dry_run() {
-                //         let func_idx = tracer.borrow().lookup_function(&func);
-                //         let type_idx = tracer.borrow().lookup_type_of_func_ref(&func);
-
-                //         tracer.borrow_mut().push_elem(
-                //             DEFAULT_TABLE_INDEX,
-                //             offset_val + j as u32,
-                //             func_idx as u32,
-                //             type_idx as u32,
-                //         );
-                //     }
-                // }
-
                 table_inst.set(offset_val + j as u32, Some(func))?;
             }
         }
@@ -555,28 +535,6 @@ impl ModuleInstance {
                 .expect("Due to validation default memory should exists");
             memory_inst.set(offset_val, data_segment.value())?;
         }
-
-        // if let Some(tracer) = tracer {
-        //     let mut tracer = tracer.borrow_mut();
-
-        //     if !tracer.dry_run() {
-        //         for (globalidx, globalref) in module_ref.globals().iter().enumerate() {
-        //             tracer.push_global(globalidx as u32, globalref);
-        //         }
-
-        //         if let Some(memory_ref) = module_ref.memory_by_index(DEFAULT_MEMORY_INDEX) {
-        //             tracer.push_init_memory(memory_ref)
-        //         }
-        //     }
-        // }
-
-        monitor
-            .map(|monitor| {
-                monitor.register_module(module, &module_ref)?;
-
-                Ok::<_, Error>(())
-            })
-            .transpose()?;
 
         Ok(NotStartedModuleRef {
             loaded_module,
@@ -647,8 +605,6 @@ impl ModuleInstance {
     pub fn new<'m, I: ImportResolver>(
         loaded_module: &'m Module,
         imports: &I,
-        // tracer: Option<Rc<RefCell<Tracer>>>,
-        monitor: Option<&mut dyn Monitor>,
     ) -> Result<NotStartedModuleRef<'m>, Error> {
         let module = loaded_module.module();
 
@@ -688,7 +644,7 @@ impl ModuleInstance {
             extern_vals.push(extern_val);
         }
 
-        let module_ref = Self::with_externvals(loaded_module, extern_vals.iter(), monitor);
+        let module_ref = Self::with_externvals(loaded_module, extern_vals.iter());
 
         module_ref
     }
@@ -828,8 +784,8 @@ impl ModuleInstance {
 /// [`assert_no_start`]: #method.assert_no_start
 /// [`not_started_instance`]: #method.not_started_instance
 pub struct NotStartedModuleRef<'a> {
-    loaded_module: &'a Module,
-    instance: ModuleRef,
+    pub loaded_module: &'a Module,
+    pub instance: ModuleRef,
 }
 
 impl<'a> NotStartedModuleRef<'a> {
@@ -1012,9 +968,7 @@ mod tests {
 				(start $f))
 			"#,
         );
-        let module =
-            ModuleInstance::new(&module_with_start, &ImportsBuilder::default(), None, None)
-                .unwrap();
+        let module = ModuleInstance::new(&module_with_start, &ImportsBuilder::default()).unwrap();
         assert!(!module.has_start());
         module.assert_no_start();
     }
@@ -1036,8 +990,6 @@ mod tests {
                 0
             ),)]
             .iter(),
-            None,
-            None
         )
         .is_ok());
 
@@ -1048,17 +1000,12 @@ mod tests {
                 ExternVal::Func(FuncInstance::alloc_host(Signature::new(&[][..], None), 0)),
                 ExternVal::Func(FuncInstance::alloc_host(Signature::new(&[][..], None), 1)),
             ]
-            .iter(),
-            None,
-            None
+            .iter()
         )
         .is_err());
 
         // externval vector is shorter than import count.
-        assert!(
-            ModuleInstance::with_externvals(&module_with_single_import, [].iter(), None, None)
-                .is_err()
-        );
+        assert!(ModuleInstance::with_externvals(&module_with_single_import, [].iter(),).is_err());
 
         // externval vector has an unexpected type.
         assert!(ModuleInstance::with_externvals(
@@ -1068,8 +1015,6 @@ mod tests {
                 0
             ),)]
             .iter(),
-            None,
-            None
         )
         .is_err());
     }
