@@ -49,10 +49,7 @@ pub trait Monitor {
         instruction: &Instruction,
     ) {
     }
-    /// Called before 'return' instruction is executed.
-    fn invoke_return_pre_hook(&mut self) {}
-    /// Called before 'call' instruction is executed.
-    fn invoke_call_pre_hook(&mut self, function_index: u32, instruction_index: u32) {}
+
     /// Called after 'call_host' instruction is executed.
     fn invoke_call_host_post_hook(&mut self, return_value: Option<Value>) {}
 

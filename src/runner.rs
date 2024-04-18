@@ -376,9 +376,6 @@ impl<'m> Interpreter<'m> {
                         FuncInstanceInternal::Internal { .. } => {
                             let nested_context = FunctionContext::new(nested_func.clone());
 
-                            self.monitor
-                                .as_mut()
-                                .map(|monitor| monitor.invoke_call_pre_hook(todo!(), todo!()));
                             if let Some(tracer) = self.get_tracer_if_active() {
                                 let mut tracer = tracer.borrow_mut();
                                 let callee_fid = tracer.lookup_function(&nested_func);
