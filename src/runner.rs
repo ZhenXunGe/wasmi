@@ -2092,6 +2092,7 @@ impl<'m> Interpreter<'m> {
                     &self.value_stack,
                     &function_context,
                     &instruction,
+                    &outcome,
                 )
             });
 
@@ -3244,7 +3245,7 @@ impl ValueStack {
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.sp
     }
 

@@ -6,8 +6,8 @@ use wasmi_core::Value;
 
 use crate::{
     isa::Instruction,
-    runner::{FunctionContext, ValueStack},
-    tracer::{etable::RunInstructionTracePre, Observer},
+    runner::{FunctionContext, InstructionOutcome, ValueStack},
+    tracer::Observer,
     Error,
     ModuleRef,
 };
@@ -47,6 +47,7 @@ pub trait Monitor {
         value_stack: &ValueStack,
         function_context: &FunctionContext,
         instruction: &Instruction,
+        outcome: &InstructionOutcome,
     ) {
     }
 
