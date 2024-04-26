@@ -68,6 +68,8 @@
 //!
 
 use alloc::vec::Vec;
+use parity_wasm::elements::ValueType;
+use specs::itable::UnaryOp;
 
 /// Should we keep a value before "discarding" a stack frame?
 ///
@@ -78,7 +80,7 @@ pub enum Keep {
     None,
     /// Pop one value from the yet-to-be-discarded stack frame to the
     /// current stack frame.
-    Single,
+    Single(ValueType),
 }
 
 impl Keep {
@@ -86,7 +88,7 @@ impl Keep {
     pub fn count(&self) -> u32 {
         match *self {
             Keep::None => 0,
-            Keep::Single => 1,
+            Keep::Single(..) => 1,
         }
     }
 }
@@ -117,7 +119,7 @@ pub enum Reloc {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BrTargets<'a> {
-    stream: &'a [InstructionInternal],
+    pub stream: &'a [InstructionInternal],
 }
 
 impl<'a> BrTargets<'a> {
@@ -140,13 +142,13 @@ impl<'a> BrTargets<'a> {
 #[allow(clippy::upper_case_acronyms)]
 pub enum Instruction<'a> {
     /// Push a local variable or an argument from the specified depth.
-    GetLocal(u32),
+    GetLocal(u32, ValueType),
 
     /// Pop a value and put it in at the specified depth.
-    SetLocal(u32),
+    SetLocal(u32, ValueType),
 
     /// Copy a value to the specified depth.
-    TeeLocal(u32),
+    TeeLocal(u32, ValueType),
 
     /// Similar to the Wasm ones, but instead of a label depth
     /// they specify direct PC.
@@ -172,7 +174,7 @@ pub enum Instruction<'a> {
     CallIndirect(u32),
 
     Drop,
-    Select,
+    Select(ValueType),
 
     GetGlobal(u32),
     SetGlobal(u32),
@@ -339,6 +341,23 @@ pub enum Instruction<'a> {
     I64ReinterpretF64,
     F32ReinterpretI32,
     F64ReinterpretI64,
+
+    I32Extend8S,
+    I32Extend16S,
+    I64Extend8S,
+    I64Extend16S,
+    I64Extend32S,
+}
+
+impl<'a> From<Instruction<'a>> for UnaryOp {
+    fn from(value: Instruction<'a>) -> Self {
+        match value {
+            Instruction::I32Clz | Instruction::I64Clz => UnaryOp::Clz,
+            Instruction::I32Ctz | Instruction::I64Ctz => UnaryOp::Ctz,
+            Instruction::I32Popcnt | Instruction::I64Popcnt => UnaryOp::Popcnt,
+            _ => unreachable!(),
+        }
+    }
 }
 
 /// The internally-stored instruction type. This differs from `Instruction` in that the `BrTable`
@@ -351,10 +370,10 @@ pub enum Instruction<'a> {
 /// borrows the list of instructions and returns targets by reading it.
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
 #[allow(clippy::upper_case_acronyms)]
-pub(crate) enum InstructionInternal {
-    GetLocal(u32),
-    SetLocal(u32),
-    TeeLocal(u32),
+pub enum InstructionInternal {
+    GetLocal(u32, ValueType),
+    SetLocal(u32, ValueType),
+    TeeLocal(u32, ValueType),
     Br(Target),
     BrIfEqz(Target),
     BrIfNez(Target),
@@ -368,7 +387,7 @@ pub(crate) enum InstructionInternal {
     CallIndirect(u32),
 
     Drop,
-    Select,
+    Select(ValueType),
 
     GetGlobal(u32),
     SetGlobal(u32),
@@ -535,11 +554,17 @@ pub(crate) enum InstructionInternal {
     I64ReinterpretF64,
     F32ReinterpretI32,
     F64ReinterpretI64,
+
+    I32Extend8S,
+    I32Extend16S,
+    I64Extend8S,
+    I64Extend16S,
+    I64Extend32S,
 }
 
 #[derive(Debug, Clone)]
 pub struct Instructions {
-    vec: Vec<InstructionInternal>,
+    pub(crate) vec: Vec<InstructionInternal>,
 }
 
 impl Instructions {
@@ -600,9 +625,9 @@ impl<'a> Iterator for InstructionIter<'a> {
         let internal = self.instructions.get(self.position as usize)?;
 
         let out = match *internal {
-            InstructionInternal::GetLocal(x) => Instruction::GetLocal(x),
-            InstructionInternal::SetLocal(x) => Instruction::SetLocal(x),
-            InstructionInternal::TeeLocal(x) => Instruction::TeeLocal(x),
+            InstructionInternal::GetLocal(x, typ) => Instruction::GetLocal(x, typ),
+            InstructionInternal::SetLocal(x, typ) => Instruction::SetLocal(x, typ),
+            InstructionInternal::TeeLocal(x, typ) => Instruction::TeeLocal(x, typ),
             InstructionInternal::Br(x) => Instruction::Br(x),
             InstructionInternal::BrIfEqz(x) => Instruction::BrIfEqz(x),
             InstructionInternal::BrIfNez(x) => Instruction::BrIfNez(x),
@@ -624,7 +649,7 @@ impl<'a> Iterator for InstructionIter<'a> {
             InstructionInternal::CallIndirect(x) => Instruction::CallIndirect(x),
 
             InstructionInternal::Drop => Instruction::Drop,
-            InstructionInternal::Select => Instruction::Select,
+            InstructionInternal::Select(vtype) => Instruction::Select(vtype),
 
             InstructionInternal::GetGlobal(x) => Instruction::GetGlobal(x),
             InstructionInternal::SetGlobal(x) => Instruction::SetGlobal(x),
@@ -791,6 +816,12 @@ impl<'a> Iterator for InstructionIter<'a> {
             InstructionInternal::I64ReinterpretF64 => Instruction::I64ReinterpretF64,
             InstructionInternal::F32ReinterpretI32 => Instruction::F32ReinterpretI32,
             InstructionInternal::F64ReinterpretI64 => Instruction::F64ReinterpretI64,
+
+            InstructionInternal::I32Extend8S => Instruction::I32Extend8S,
+            InstructionInternal::I32Extend16S => Instruction::I32Extend16S,
+            InstructionInternal::I64Extend8S => Instruction::I64Extend8S,
+            InstructionInternal::I64Extend16S => Instruction::I64Extend16S,
+            InstructionInternal::I64Extend32S => Instruction::I64Extend32S,
         };
 
         self.position += 1;

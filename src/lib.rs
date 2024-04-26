@@ -94,7 +94,7 @@
 //! }
 //! ```
 
-#![warn(missing_docs)]
+// #![warn(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::len_without_is_empty)]
 #![allow(clippy::new_ret_no_self)]
@@ -258,17 +258,19 @@ impl From<validation::Error> for Error {
     }
 }
 
-mod func;
+pub mod func;
 mod global;
 mod host;
 mod imports;
-mod isa;
 mod memory;
-mod module;
+pub mod module;
 mod prepare;
-mod runner;
+pub mod runner;
 mod table;
 mod types;
+
+pub mod isa;
+pub mod monitor;
 
 pub use self::{
     func::{FuncInstance, FuncInvocation, FuncRef, ResumableError},
@@ -318,7 +320,7 @@ pub mod nan_preserving_float {
 /// Deserialized module prepared for instantiation.
 pub struct Module {
     code_map: Vec<isa::Instructions>,
-    module: parity_wasm::elements::Module,
+    pub module: parity_wasm::elements::Module,
 }
 
 impl Module {
@@ -452,7 +454,7 @@ impl Module {
         Module::from_parity_wasm_module(module)
     }
 
-    pub(crate) fn module(&self) -> &parity_wasm::elements::Module {
+    pub fn module(&self) -> &parity_wasm::elements::Module {
         &self.module
     }
 

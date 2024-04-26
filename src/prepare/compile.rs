@@ -1,8 +1,8 @@
 use alloc::{string::String, vec::Vec};
 
-use parity_wasm::elements::{BlockType, FuncBody, Instruction};
+use parity_wasm::elements::{BlockType, FuncBody, Instruction, SignExtInstruction, ValueType};
 
-use crate::isa;
+use crate::isa::{self, InstructionInternal};
 use validation::{
     func::{
         require_label,
@@ -88,6 +88,17 @@ impl FuncValidator for Compiler {
         compiler
             .label_stack
             .push(BlockFrameType::Block { end_label });
+
+        for local_group in body.locals() {
+            for _ in 0..local_group.count() {
+                match local_group.value_type() {
+                    ValueType::I32 => compiler.sink.emit(InstructionInternal::I32Const(0)),
+                    ValueType::I64 => compiler.sink.emit(InstructionInternal::I64Const(0)),
+                    ValueType::F32 => compiler.sink.emit(InstructionInternal::F32Const(0)),
+                    ValueType::F64 => compiler.sink.emit(InstructionInternal::F64Const(0)),
+                }
+            }
+        }
 
         compiler
     }
@@ -289,8 +300,8 @@ impl Compiler {
                 // These two unwraps are guaranteed to succeed by validation.
                 const REQUIRE_TARGET_PROOF: &str =
                     "validation step ensures that the value stack underflows;
-                    validation also ensures that the depth is correct;
-                    qed";
+                                    validation also ensures that the depth is correct;
+                                    qed";
                 let targets = targets.expect(REQUIRE_TARGET_PROOF);
                 let default_target = default_target.expect(REQUIRE_TARGET_PROOF);
 
@@ -326,25 +337,35 @@ impl Compiler {
             }
             Select => {
                 context.step(instruction)?;
-                self.sink.emit(isa::InstructionInternal::Select);
+                if let StackValueType::Specific(t) = context.value_stack.top()? {
+                    self.sink.emit(isa::InstructionInternal::Select(*t));
+                } else {
+                    unreachable!()
+                }
             }
 
             GetLocal(index) => {
                 // We need to calculate relative depth before validation since
                 // it will change the value stack size.
-                let depth = relative_local_depth(index, &context.locals, &context.value_stack)?;
+                let (depth, typ) =
+                    relative_local_depth_type(index, &context.locals, &context.value_stack)?;
                 context.step(instruction)?;
-                self.sink.emit(isa::InstructionInternal::GetLocal(depth));
+                self.sink
+                    .emit(isa::InstructionInternal::GetLocal(depth, typ));
             }
             SetLocal(index) => {
                 context.step(instruction)?;
-                let depth = relative_local_depth(index, &context.locals, &context.value_stack)?;
-                self.sink.emit(isa::InstructionInternal::SetLocal(depth));
+                let (depth, typ) =
+                    relative_local_depth_type(index, &context.locals, &context.value_stack)?;
+                self.sink
+                    .emit(isa::InstructionInternal::SetLocal(depth, typ));
             }
             TeeLocal(index) => {
                 context.step(instruction)?;
-                let depth = relative_local_depth(index, &context.locals, &context.value_stack)?;
-                self.sink.emit(isa::InstructionInternal::TeeLocal(depth));
+                let (depth, typ) =
+                    relative_local_depth_type(index, &context.locals, &context.value_stack)?;
+                self.sink
+                    .emit(isa::InstructionInternal::TeeLocal(depth, typ));
             }
             GetGlobal(index) => {
                 context.step(instruction)?;
@@ -976,6 +997,23 @@ impl Compiler {
                 context.step(instruction)?;
                 self.sink.emit(isa::InstructionInternal::F64ReinterpretI64);
             }
+            SignExt(ref ext) => match ext {
+                SignExtInstruction::I32Extend8S => {
+                    self.sink.emit(isa::InstructionInternal::I32Extend8S);
+                }
+                SignExtInstruction::I32Extend16S => {
+                    self.sink.emit(isa::InstructionInternal::I32Extend16S);
+                }
+                SignExtInstruction::I64Extend8S => {
+                    self.sink.emit(isa::InstructionInternal::I64Extend8S);
+                }
+                SignExtInstruction::I64Extend16S => {
+                    self.sink.emit(isa::InstructionInternal::I64Extend16S);
+                }
+                SignExtInstruction::I64Extend32S => {
+                    self.sink.emit(isa::InstructionInternal::I64Extend32S);
+                }
+            },
             _ => {
                 context.step(instruction)?;
             }
@@ -1003,7 +1041,7 @@ fn compute_drop_keep(
         // only via reaching it's closing `End` operator.
         (StartedWith::Loop, _) => isa::Keep::None,
 
-        (_, BlockType::Value(_)) => isa::Keep::Single,
+        (_, BlockType::Value(v)) => isa::Keep::Single(v),
         (_, BlockType::NoResult) => isa::Keep::None,
     };
 
@@ -1112,7 +1150,7 @@ fn drop_keep_return(
 /// by `idx`.
 ///
 /// See stack layout definition in mod isa.
-fn relative_local_depth(
+fn _relative_local_depth(
     idx: u32,
     locals: &Locals,
     value_stack: &StackWithLimit<StackValueType>,
@@ -1125,6 +1163,26 @@ fn relative_local_depth(
         .and_then(|x| x.checked_sub(idx))
         .ok_or_else(|| Error(String::from("Locals range not in 32-bit range")))?;
     Ok(depth)
+}
+
+/// Returns a relative depth on the stack of a local variable specified
+/// by `idx`.
+///
+/// See stack layout definition in mod isa.
+fn relative_local_depth_type(
+    idx: u32,
+    locals: &Locals,
+    value_stack: &StackWithLimit<StackValueType>,
+) -> Result<(u32, ValueType), Error> {
+    let value_stack_height = value_stack.len() as u32;
+    let locals_and_params_count = locals.count();
+
+    let depth = value_stack_height
+        .checked_add(locals_and_params_count)
+        .and_then(|x| x.checked_sub(idx))
+        .ok_or_else(|| Error(String::from("Locals range not in 32-bit range")))?;
+    let typ = locals.type_of_local(idx)?;
+    Ok((depth, typ))
 }
 
 /// The target of a branch instruction.

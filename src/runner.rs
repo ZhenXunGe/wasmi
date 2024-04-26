@@ -3,10 +3,11 @@
 use crate::{
     func::{FuncInstance, FuncInstanceInternal, FuncRef},
     host::Externals,
-    isa,
+    isa::{self},
     memory::MemoryRef,
     memory_units::Pages,
     module::ModuleRef,
+    monitor::Monitor,
     nan_preserving_float::{F32, F64},
     value::{
         ArithmeticOps,
@@ -27,13 +28,17 @@ use crate::{
 use alloc::{boxed::Box, vec::Vec};
 use core::{fmt, ops, u32, usize};
 use parity_wasm::elements::Local;
+use specs::mtable::VarType;
 use validation::{DEFAULT_MEMORY_INDEX, DEFAULT_TABLE_INDEX};
 
 /// Maximum number of bytes on the value stack.
-pub const DEFAULT_VALUE_STACK_LIMIT: usize = 1024 * 1024;
+/// wasmi's default value is 1024 * 1024,
+/// ZKWASM: Maximum number of entries on the value stack.
+/// we set 4096 to adapt zkWasm
+pub const DEFAULT_VALUE_STACK_LIMIT: usize = 4096;
 
 /// Maximum number of levels on the call stack.
-pub const DEFAULT_CALL_STACK_LIMIT: usize = 64 * 1024;
+pub const DEFAULT_CALL_STACK_LIMIT: usize = 128 * 1024;
 
 /// This is a wrapper around u64 to allow us to treat runtime values as a tag-free `u64`
 /// (where if the runtime value is <64 bits the upper bits are 0). This is safe, since
@@ -47,7 +52,7 @@ pub const DEFAULT_CALL_STACK_LIMIT: usize = 64 * 1024;
 /// at these boundaries.
 #[derive(Copy, Clone, Debug, PartialEq, Default)]
 #[repr(transparent)]
-struct ValueInternal(pub u64);
+pub struct ValueInternal(pub u64);
 
 impl ValueInternal {
     pub fn with_type(self, ty: ValueType) -> RuntimeValue {
@@ -60,7 +65,7 @@ impl ValueInternal {
     }
 }
 
-trait FromValueInternal
+pub trait FromValueInternal
 where
     Self: Sized,
 {
@@ -109,6 +114,13 @@ macro_rules! impl_from_value_internal_float	{
 
 impl_from_value_internal!(i8, u8, i16, u16, i32, u32, i64, u64);
 impl_from_value_internal_float!(f32, f64, F32, F64);
+
+pub fn from_value_internal_to_u64_with_typ(vtype: VarType, val: ValueInternal) -> u64 {
+    match vtype {
+        VarType::I32 => val.0 as u32 as u64,
+        VarType::I64 => val.0 as u64,
+    }
+}
 
 impl From<bool> for ValueInternal {
     fn from(other: bool) -> Self {
@@ -172,20 +184,21 @@ enum RunResult {
 }
 
 /// Function interpreter.
-pub struct Interpreter {
+pub struct Interpreter<'a> {
     value_stack: ValueStack,
     call_stack: CallStack,
     return_type: Option<ValueType>,
     state: InterpreterState,
     scratch: Vec<RuntimeValue>,
+    pub(crate) monitor: Option<&'a mut dyn Monitor>,
 }
 
-impl Interpreter {
+impl<'m> Interpreter<'m> {
     pub fn new(
         func: &FuncRef,
         args: &[RuntimeValue],
         mut stack_recycler: Option<&mut StackRecycler>,
-    ) -> Result<Interpreter, Trap> {
+    ) -> Result<Interpreter<'m>, Trap> {
         let mut value_stack = StackRecycler::recreate_value_stack(&mut stack_recycler);
         for &arg in args {
             let arg = arg.into();
@@ -208,6 +221,7 @@ impl Interpreter {
             return_type,
             state: InterpreterState::Initialized,
             scratch: Vec::new(),
+            monitor: None,
         })
     }
 
@@ -346,6 +360,10 @@ impl Interpreter {
                                     .push(return_val.into())
                                     .map_err(Trap::from)?;
                             }
+
+                            self.monitor
+                                .as_mut()
+                                .map(|monitor| monitor.invoke_call_host_post_hook(return_val));
                         }
                     }
                 }
@@ -359,15 +377,48 @@ impl Interpreter {
         instructions: &isa::Instructions,
     ) -> Result<RunResult, TrapCode> {
         let mut iter = instructions.iterate_from(function_context.position);
-
         loop {
+            let pc = iter.position();
+            let sp = self.value_stack.sp;
+
             let instruction = iter.next().expect(
                 "Ran out of instructions, this should be impossible \
                  since validation ensures that we either have an explicit \
                  return or an implicit block `end`.",
             );
 
-            match self.run_instruction(function_context, &instruction)? {
+            self.monitor.as_mut().map(|monitor| {
+                monitor.invoke_instruction_pre_hook(
+                    &self.value_stack,
+                    &function_context,
+                    &instruction,
+                )
+            });
+
+            let current_memory = {
+                function_context
+                    .memory()
+                    .map_or(0usize, |m| m.current_size().0)
+            };
+
+            let outcome = self.run_instruction(function_context, &instruction)?;
+
+            self.monitor.as_mut().map(|monitor| {
+                monitor.invoke_instruction_post_hook(
+                    function_context
+                        .module
+                        .func_index_by_func_ref(&function_context.function),
+                    pc,
+                    sp.try_into().unwrap(),
+                    current_memory.try_into().unwrap(),
+                    &self.value_stack,
+                    &function_context,
+                    &instruction,
+                    &outcome,
+                )
+            });
+
+            match outcome {
                 InstructionOutcome::RunNextInstruction => {}
                 InstructionOutcome::Branch(target) => {
                     iter = instructions.iterate_from(target.dst_pc);
@@ -400,17 +451,17 @@ impl Interpreter {
             isa::Instruction::BrIfEqz(target) => self.run_br_eqz(*target),
             isa::Instruction::BrIfNez(target) => self.run_br_nez(*target),
             isa::Instruction::BrTable(targets) => self.run_br_table(*targets),
-            isa::Instruction::Return(drop_keep) => self.run_return(*drop_keep),
+            isa::Instruction::Return(drop_keep, ..) => self.run_return(*drop_keep),
 
             isa::Instruction::Call(index) => self.run_call(context, *index),
             isa::Instruction::CallIndirect(index) => self.run_call_indirect(context, *index),
 
             isa::Instruction::Drop => self.run_drop(),
-            isa::Instruction::Select => self.run_select(),
+            isa::Instruction::Select(_) => self.run_select(),
 
-            isa::Instruction::GetLocal(depth) => self.run_get_local(*depth),
-            isa::Instruction::SetLocal(depth) => self.run_set_local(*depth),
-            isa::Instruction::TeeLocal(depth) => self.run_tee_local(*depth),
+            isa::Instruction::GetLocal(depth, ..) => self.run_get_local(*depth),
+            isa::Instruction::SetLocal(depth, ..) => self.run_set_local(*depth),
+            isa::Instruction::TeeLocal(depth, ..) => self.run_tee_local(*depth),
             isa::Instruction::GetGlobal(index) => self.run_get_global(context, *index),
             isa::Instruction::SetGlobal(index) => self.run_set_global(context, *index),
 
@@ -605,6 +656,12 @@ impl Interpreter {
             isa::Instruction::I64ReinterpretF64 => self.run_reinterpret::<F64, i64>(),
             isa::Instruction::F32ReinterpretI32 => self.run_reinterpret::<i32, F32>(),
             isa::Instruction::F64ReinterpretI64 => self.run_reinterpret::<i64, F64>(),
+
+            isa::Instruction::I32Extend8S => self.run_extend::<i8, i32, i32>(),
+            isa::Instruction::I32Extend16S => self.run_extend::<i16, i32, i32>(),
+            isa::Instruction::I64Extend8S => self.run_extend::<i8, i64, i64>(),
+            isa::Instruction::I64Extend16S => self.run_extend::<i16, i64, i64>(),
+            isa::Instruction::I64Extend32S => self.run_extend::<i32, i64, i64>(),
         }
     }
 
@@ -1268,7 +1325,7 @@ impl Interpreter {
 }
 
 /// Function execution context.
-struct FunctionContext {
+pub struct FunctionContext {
     /// Is context initialized.
     pub is_initialized: bool,
     /// Internal function reference.
@@ -1301,14 +1358,19 @@ impl FunctionContext {
 
     pub fn initialize(
         &mut self,
-        locals: &[Local],
-        value_stack: &mut ValueStack,
+        _locals: &[Local],
+        _value_stack: &mut ValueStack,
     ) -> Result<(), TrapCode> {
         debug_assert!(!self.is_initialized);
 
-        let num_locals = locals.iter().map(|l| l.count() as usize).sum();
-
-        value_stack.extend(num_locals)?;
+        {
+            /*
+             * Since we have explicitly pushed local variables via T.const instruction,
+             * we bypass extendind value_stack here.
+             */
+            // let num_locals = locals.iter().map(|l| l.count() as usize).sum();
+            // value_stack.extend(num_locals)?;
+        }
 
         self.is_initialized = true;
         Ok(())
@@ -1329,7 +1391,7 @@ impl fmt::Debug for FunctionContext {
     }
 }
 
-fn effective_address(address: u32, offset: u32) -> Result<u32, TrapCode> {
+pub fn effective_address(address: u32, offset: u32) -> Result<u32, TrapCode> {
     match offset.checked_add(address) {
         None => Err(TrapCode::MemoryAccessOutOfBounds),
         Some(address) => Ok(address),
@@ -1370,7 +1432,7 @@ pub fn check_function_args(signature: &Signature, args: &[RuntimeValue]) -> Resu
     Ok(())
 }
 
-struct ValueStack {
+pub struct ValueStack {
     buf: Box<[ValueInternal]>,
     /// Index of the first free place in the stack.
     sp: usize,
@@ -1388,7 +1450,7 @@ impl core::fmt::Debug for ValueStack {
 impl ValueStack {
     #[inline]
     fn drop_keep(&mut self, drop_keep: isa::DropKeep) {
-        if drop_keep.keep == isa::Keep::Single {
+        if let isa::Keep::Single(_) = drop_keep.keep {
             let top = *self.top();
             *self.pick_mut(drop_keep.drop as usize + 1) = top;
         }
@@ -1426,11 +1488,11 @@ impl ValueStack {
     }
 
     #[inline]
-    fn top(&self) -> &ValueInternal {
+    pub fn top(&self) -> &ValueInternal {
         self.pick(1)
     }
 
-    fn pick(&self, depth: usize) -> &ValueInternal {
+    pub fn pick(&self, depth: usize) -> &ValueInternal {
         &self.buf[self.sp - depth]
     }
 
@@ -1453,6 +1515,7 @@ impl ValueStack {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn extend(&mut self, len: usize) -> Result<(), TrapCode> {
         let cells = self
             .buf
@@ -1466,7 +1529,7 @@ impl ValueStack {
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.sp
     }
 
@@ -1519,7 +1582,7 @@ pub struct StackRecycler {
 
 impl StackRecycler {
     /// Limit stacks created by this recycler to
-    /// - `value_stack_limit` bytes for values and
+    /// - `value_stack_limit` entries for values and
     /// - `call_stack_limit` levels for calls.
     pub fn with_limits(value_stack_limit: usize, call_stack_limit: usize) -> Self {
         Self {
@@ -1549,8 +1612,7 @@ impl StackRecycler {
     fn recreate_value_stack(this: &mut Option<&mut Self>) -> ValueStack {
         let limit = this
             .as_ref()
-            .map_or(DEFAULT_VALUE_STACK_LIMIT, |this| this.value_stack_limit)
-            / ::core::mem::size_of::<ValueInternal>();
+            .map_or(DEFAULT_VALUE_STACK_LIMIT, |this| this.value_stack_limit);
 
         let buf = this
             .as_mut()

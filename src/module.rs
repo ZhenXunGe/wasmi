@@ -5,6 +5,7 @@ use crate::{
     imports::ImportResolver,
     memory::MemoryRef,
     memory_units::Pages,
+    monitor::Monitor,
     nan_preserving_float::{F32, F64},
     runner::StackRecycler,
     table::TableRef,
@@ -29,6 +30,7 @@ use core::{
     fmt,
 };
 use parity_wasm::elements::{External, InitExpr, Instruction, Internal, ResizableLimits, Type};
+use std::collections::HashMap;
 use validation::{DEFAULT_MEMORY_INDEX, DEFAULT_TABLE_INDEX};
 
 /// Reference to a [`ModuleInstance`].
@@ -164,12 +166,14 @@ impl ExternVal {
 /// [`invoke_export`]: #method.invoke_export
 #[derive(Debug)]
 pub struct ModuleInstance {
-    signatures: RefCell<Vec<Rc<Signature>>>,
+    pub(crate) signatures: RefCell<Vec<Rc<Signature>>>,
     tables: RefCell<Vec<TableRef>>,
     funcs: RefCell<Vec<FuncRef>>,
     memories: RefCell<Vec<MemoryRef>>,
     globals: RefCell<Vec<GlobalRef>>,
-    exports: RefCell<BTreeMap<String, ExternVal>>,
+    pub exports: RefCell<BTreeMap<String, ExternVal>>,
+
+    funcs_index: RefCell<HashMap<FuncRef, u32>>,
 }
 
 impl ModuleInstance {
@@ -181,30 +185,43 @@ impl ModuleInstance {
             memories: RefCell::new(Vec::new()),
             globals: RefCell::new(Vec::new()),
             exports: RefCell::new(BTreeMap::new()),
+
+            funcs_index: RefCell::new(HashMap::new()),
         }
     }
 
-    pub(crate) fn memory_by_index(&self, idx: u32) -> Option<MemoryRef> {
+    pub fn memory_by_index(&self, idx: u32) -> Option<MemoryRef> {
         self.memories.borrow_mut().get(idx as usize).cloned()
     }
 
-    pub(crate) fn table_by_index(&self, idx: u32) -> Option<TableRef> {
+    pub fn table_by_index(&self, idx: u32) -> Option<TableRef> {
         self.tables.borrow_mut().get(idx as usize).cloned()
     }
 
-    pub(crate) fn global_by_index(&self, idx: u32) -> Option<GlobalRef> {
+    pub fn global_by_index(&self, idx: u32) -> Option<GlobalRef> {
         self.globals.borrow_mut().get(idx as usize).cloned()
     }
 
-    pub(crate) fn func_by_index(&self, idx: u32) -> Option<FuncRef> {
+    pub fn func_by_index(&self, idx: u32) -> Option<FuncRef> {
         self.funcs.borrow().get(idx as usize).cloned()
+    }
+
+    pub fn func_index_by_func_ref(&self, func: &FuncRef) -> u32 {
+        *self.funcs_index.borrow().get(func).unwrap()
     }
 
     pub(crate) fn signature_by_index(&self, idx: u32) -> Option<Rc<Signature>> {
         self.signatures.borrow().get(idx as usize).cloned()
     }
 
+    fn funcs(&self) -> RefCell<Vec<FuncRef>> {
+        self.funcs.clone()
+    }
+
     fn push_func(&self, func: FuncRef) {
+        let index = self.funcs().borrow().len() as u32;
+
+        self.funcs_index.borrow_mut().insert(func.clone(), index);
         self.funcs.borrow_mut().push(func);
     }
 
@@ -281,6 +298,7 @@ impl ModuleInstance {
 								import.field(),
 							)));
                         }
+
                         instance.push_func(func.clone())
                     }
                     (&External::Table(ref tt), &ExternVal::Table(ref table)) => {
@@ -334,8 +352,13 @@ impl ModuleInstance {
                     locals: body.locals().to_vec(),
                     code,
                 };
-                let func_instance =
-                    FuncInstance::alloc_internal(Rc::downgrade(&instance.0), signature, func_body);
+                let func_instance = FuncInstance::alloc_internal(
+                    Rc::downgrade(&instance.0),
+                    signature,
+                    func_body,
+                    instance.funcs().borrow().len(),
+                );
+
                 instance.push_func(func_instance);
             }
         }
@@ -640,8 +663,23 @@ impl ModuleInstance {
         externals: &mut E,
     ) -> Result<Option<RuntimeValue>, Error> {
         let func_instance = self.func_by_name(func_name)?;
-
         FuncInstance::invoke(&func_instance, args, externals).map_err(Error::Trap)
+    }
+
+    pub fn invoke_export_trace<E: Externals>(
+        &self,
+        func_name: &str,
+        args: &[RuntimeValue],
+        externals: &mut E,
+        monitor: &mut dyn Monitor,
+    ) -> Result<Option<RuntimeValue>, Error> {
+        {
+            monitor.invoke_exported_function_pre_hook();
+        }
+
+        let func_instance = self.func_by_name(func_name)?;
+
+        FuncInstance::invoke_trace(&func_instance, args, externals, monitor).map_err(Error::Trap)
     }
 
     /// Invoke exported function by a name using recycled stacks.
@@ -664,7 +702,7 @@ impl ModuleInstance {
             .map_err(Error::Trap)
     }
 
-    fn func_by_name(&self, func_name: &str) -> Result<FuncRef, Error> {
+    pub fn func_by_name(&self, func_name: &str) -> Result<FuncRef, Error> {
         let extern_val = self
             .export_by_name(func_name)
             .ok_or_else(|| Error::Function(format!("Module doesn't have export {}", func_name)))?;
@@ -705,8 +743,8 @@ impl ModuleInstance {
 /// [`assert_no_start`]: #method.assert_no_start
 /// [`not_started_instance`]: #method.not_started_instance
 pub struct NotStartedModuleRef<'a> {
-    loaded_module: &'a Module,
-    instance: ModuleRef,
+    pub loaded_module: &'a Module,
+    pub instance: ModuleRef,
 }
 
 impl<'a> NotStartedModuleRef<'a> {
@@ -735,6 +773,30 @@ impl<'a> NotStartedModuleRef<'a> {
                 .func_by_index(start_fn_idx)
                 .expect("Due to validation start function should exists");
             FuncInstance::invoke(&start_func, &[], state)?;
+        }
+        Ok(self.instance)
+    }
+
+    /// Executes `start` function (if any) and returns fully instantiated module.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if start function traps.
+    pub fn run_start_tracer<E: Externals>(
+        self,
+        state: &mut E,
+        monitor: &mut dyn Monitor,
+    ) -> Result<ModuleRef, Trap> {
+        {
+            monitor.invoke_exported_function_pre_hook();
+        }
+
+        if let Some(start_fn_idx) = self.loaded_module.module().start_section() {
+            let start_func = self
+                .instance
+                .func_by_index(start_fn_idx)
+                .expect("Due to validation start function should exists");
+            FuncInstance::invoke_trace(&start_func, &[], state, monitor)?;
         }
         Ok(self.instance)
     }
@@ -780,7 +842,7 @@ impl<'a> NotStartedModuleRef<'a> {
     }
 }
 
-fn eval_init_expr(init_expr: &InitExpr, module: &ModuleInstance) -> RuntimeValue {
+pub fn eval_init_expr(init_expr: &InitExpr, module: &ModuleInstance) -> RuntimeValue {
     let code = init_expr.code();
     debug_assert!(
         code.len() == 2,
@@ -891,7 +953,7 @@ mod tests {
                 ExternVal::Func(FuncInstance::alloc_host(Signature::new(&[][..], None), 0)),
                 ExternVal::Func(FuncInstance::alloc_host(Signature::new(&[][..], None), 1)),
             ]
-            .iter(),
+            .iter()
         )
         .is_err());
 

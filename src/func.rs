@@ -2,6 +2,7 @@ use crate::{
     host::Externals,
     isa,
     module::ModuleInstance,
+    monitor::Monitor,
     runner::{check_function_args, Interpreter, InterpreterState, StackRecycler},
     RuntimeValue,
     Signature,
@@ -13,7 +14,7 @@ use alloc::{
     rc::{Rc, Weak},
     vec::Vec,
 };
-use core::fmt;
+use core::{fmt, hash::Hash};
 use parity_wasm::elements::Local;
 
 /// Reference to a function (See [`FuncInstance`] for details).
@@ -21,7 +22,7 @@ use parity_wasm::elements::Local;
 /// This reference has a reference-counting semantics.
 ///
 /// [`FuncInstance`]: struct.FuncInstance.html
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FuncRef(Rc<FuncInstance>);
 
 impl ::core::ops::Deref for FuncRef {
@@ -45,14 +46,16 @@ impl ::core::ops::Deref for FuncRef {
 ///   See more in [`Externals`].
 ///
 /// [`Externals`]: trait.Externals.html
+#[derive(PartialEq, Eq, Hash)]
 pub struct FuncInstance(FuncInstanceInternal);
 
 #[derive(Clone)]
-pub(crate) enum FuncInstanceInternal {
+pub enum FuncInstanceInternal {
     Internal {
         signature: Rc<Signature>,
         module: Weak<ModuleInstance>,
         body: Rc<FuncBody>,
+        index: usize,
     },
     Host {
         signature: Signature,
@@ -60,13 +63,61 @@ pub(crate) enum FuncInstanceInternal {
     },
 }
 
+impl Hash for FuncInstanceInternal {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            FuncInstanceInternal::Internal { index, .. } => {
+                0.hash(state);
+                index.hash(state);
+            }
+            FuncInstanceInternal::Host {
+                host_func_index, ..
+            } => {
+                1.hash(state);
+                host_func_index.hash(state);
+            }
+        }
+    }
+}
+
+impl PartialEq for FuncInstanceInternal {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Internal { index: l_index, .. }, Self::Internal { index: r_index, .. }) => {
+                l_index == r_index
+            }
+            (
+                Self::Host {
+                    signature: l_signature,
+                    host_func_index: l_host_func_index,
+                },
+                Self::Host {
+                    signature: r_signature,
+                    host_func_index: r_host_func_index,
+                },
+            ) => l_signature == r_signature && l_host_func_index == r_host_func_index,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for FuncInstanceInternal {}
+
 impl fmt::Debug for FuncInstance {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.as_internal() {
-            FuncInstanceInternal::Internal { ref signature, .. } => {
+            FuncInstanceInternal::Internal {
+                ref signature,
+                index,
+                ..
+            } => {
                 // We can't write description of self.module here, because it generate
                 // debug string for function instances and this will lead to infinite loop.
-                write!(f, "Internal {{ signature={:?} }}", signature,)
+                write!(
+                    f,
+                    "Internal {{ signature={:?}, index={} }}",
+                    signature, index
+                )
             }
             FuncInstanceInternal::Host { ref signature, .. } => {
                 write!(f, "Host {{ signature={:?} }}", signature)
@@ -104,7 +155,7 @@ impl FuncInstance {
         }
     }
 
-    pub(crate) fn as_internal(&self) -> &FuncInstanceInternal {
+    pub fn as_internal(&self) -> &FuncInstanceInternal {
         &self.0
     }
 
@@ -112,16 +163,18 @@ impl FuncInstance {
         module: Weak<ModuleInstance>,
         signature: Rc<Signature>,
         body: FuncBody,
+        index: usize,
     ) -> FuncRef {
         let func = FuncInstanceInternal::Internal {
             signature,
             module,
             body: Rc::new(body),
+            index,
         };
         FuncRef(Rc::new(FuncInstance(func)))
     }
 
-    pub(crate) fn body(&self) -> Option<Rc<FuncBody>> {
+    pub fn body(&self) -> Option<Rc<FuncBody>> {
         match *self.as_internal() {
             FuncInstanceInternal::Internal { ref body, .. } => Some(Rc::clone(body)),
             FuncInstanceInternal::Host { .. } => None,
@@ -152,6 +205,23 @@ impl FuncInstance {
                 ref host_func_index,
                 ..
             } => externals.invoke_index(*host_func_index, args.into()),
+        }
+    }
+
+    pub fn invoke_trace<E: Externals>(
+        func: &FuncRef,
+        args: &[RuntimeValue],
+        externals: &mut E,
+        monitor: &mut dyn Monitor,
+    ) -> Result<Option<RuntimeValue>, Trap> {
+        check_function_args(func.signature(), args)?;
+        match *func.as_internal() {
+            FuncInstanceInternal::Internal { .. } => {
+                let mut interpreter = Interpreter::new(func, args, None)?;
+                interpreter.monitor = Some(monitor);
+                interpreter.start_execution(externals)
+            }
+            FuncInstanceInternal::Host { .. } => unreachable!(),
         }
     }
 
@@ -197,10 +267,10 @@ impl FuncInstance {
     /// [`Trap`]: #enum.Trap.html
     /// [`start_execution`]: struct.FuncInvocation.html#method.start_execution
     /// [`resume_execution`]: struct.FuncInvocation.html#method.resume_execution
-    pub fn invoke_resumable<'args>(
+    pub fn invoke_resumable<'a, 'args>(
         func: &FuncRef,
         args: impl Into<Cow<'args, [RuntimeValue]>>,
-    ) -> Result<FuncInvocation<'args>, Trap> {
+    ) -> Result<FuncInvocation<'a, 'args>, Trap> {
         let args = args.into();
         check_function_args(func.signature(), &args)?;
         match *func.as_internal() {
@@ -255,12 +325,12 @@ impl From<Trap> for ResumableError {
 }
 
 /// A resumable invocation handle. This struct is returned by `FuncInstance::invoke_resumable`.
-pub struct FuncInvocation<'args> {
-    kind: FuncInvocationKind<'args>,
+pub struct FuncInvocation<'a, 'args> {
+    kind: FuncInvocationKind<'a, 'args>,
 }
 
-enum FuncInvocationKind<'args> {
-    Internal(Interpreter),
+enum FuncInvocationKind<'a, 'args> {
+    Internal(Interpreter<'a>),
     Host {
         args: Cow<'args, [RuntimeValue]>,
         host_func_index: usize,
@@ -268,7 +338,7 @@ enum FuncInvocationKind<'args> {
     },
 }
 
-impl<'args> FuncInvocation<'args> {
+impl<'a, 'args> FuncInvocation<'a, 'args> {
     /// Whether this invocation is currently resumable.
     pub fn is_resumable(&self) -> bool {
         match &self.kind {
