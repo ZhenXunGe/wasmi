@@ -143,6 +143,15 @@ pub enum UniArg {
     IConst(wasmi_core::Value),
 }
 
+impl UniArg {
+    pub(crate) fn try_decease_stack_depth(&mut self, diff: usize) {
+        match self {
+            UniArg::Stack(i) => *self = UniArg::Stack(*i - diff),
+            _ => {}
+        }
+    }
+}
+
 /// The main interpreted instruction type. This is what is returned by `InstructionIter`, but
 /// it is not what is stored internally. For that, see `InstructionInternal`.
 #[derive(Debug, Clone, PartialEq)]
@@ -567,6 +576,227 @@ pub enum InstructionInternal {
     I64Extend8S(UniArg),
     I64Extend16S(UniArg),
     I64Extend32S(UniArg),
+}
+
+impl InstructionInternal {
+    pub(crate) fn get_uniarg_skip_count(&self) -> usize {
+        match self {
+            _ => 0,
+        }
+    }
+
+    pub(crate) fn get_uniarg_count(&self) -> usize {
+        match self {
+            InstructionInternal::Select(_, _, _)
+            | InstructionInternal::I32Store(_, _, _)
+            | InstructionInternal::I64Store(_, _, _)
+            | InstructionInternal::I32Store8(_, _, _)
+            | InstructionInternal::I32Store16(_, _, _)
+            | InstructionInternal::I64Store8(_, _, _)
+            | InstructionInternal::I64Store16(_, _, _)
+            | InstructionInternal::I64Store32(_, _, _)
+            | InstructionInternal::I32Eq(_, _)
+            | InstructionInternal::I32Ne(_, _)
+            | InstructionInternal::I32LtS(_, _)
+            | InstructionInternal::I32LtU(_, _)
+            | InstructionInternal::I32GtS(_, _)
+            | InstructionInternal::I32GtU(_, _)
+            | InstructionInternal::I32LeS(_, _)
+            | InstructionInternal::I32LeU(_, _)
+            | InstructionInternal::I32GeS(_, _)
+            | InstructionInternal::I32GeU(_, _)
+            | InstructionInternal::I64Eq(_, _)
+            | InstructionInternal::I64Ne(_, _)
+            | InstructionInternal::I64LtS(_, _)
+            | InstructionInternal::I64LtU(_, _)
+            | InstructionInternal::I64GtS(_, _)
+            | InstructionInternal::I64GtU(_, _)
+            | InstructionInternal::I64LeS(_, _)
+            | InstructionInternal::I64LeU(_, _)
+            | InstructionInternal::I64GeS(_, _)
+            | InstructionInternal::I64GeU(_, _)
+            | InstructionInternal::I32Add(_, _)
+            | InstructionInternal::I32Sub(_, _)
+            | InstructionInternal::I32Mul(_, _)
+            | InstructionInternal::I32DivS(_, _)
+            | InstructionInternal::I32DivU(_, _)
+            | InstructionInternal::I32RemS(_, _)
+            | InstructionInternal::I32RemU(_, _)
+            | InstructionInternal::I32And(_, _)
+            | InstructionInternal::I32Or(_, _)
+            | InstructionInternal::I32Xor(_, _)
+            | InstructionInternal::I32Shl(_, _)
+            | InstructionInternal::I32ShrS(_, _)
+            | InstructionInternal::I32ShrU(_, _)
+            | InstructionInternal::I32Rotl(_, _)
+            | InstructionInternal::I32Rotr(_, _)
+            | InstructionInternal::I64Add(_, _)
+            | InstructionInternal::I64Sub(_, _)
+            | InstructionInternal::I64Mul(_, _)
+            | InstructionInternal::I64DivS(_, _)
+            | InstructionInternal::I64DivU(_, _)
+            | InstructionInternal::I64RemS(_, _)
+            | InstructionInternal::I64RemU(_, _)
+            | InstructionInternal::I64And(_, _)
+            | InstructionInternal::I64Or(_, _)
+            | InstructionInternal::I64Xor(_, _)
+            | InstructionInternal::I64Shl(_, _)
+            | InstructionInternal::I64ShrS(_, _)
+            | InstructionInternal::I64ShrU(_, _)
+            | InstructionInternal::I64Rotl(_, _)
+            | InstructionInternal::I64Rotr(_, _) => 2,
+
+            InstructionInternal::BrIfEqz(_, _)
+            | InstructionInternal::BrIfNez(_, _)
+            | InstructionInternal::BrTable { .. }
+            | InstructionInternal::CallIndirect(_, _) => 1,
+
+            InstructionInternal::SetLocal(_, _, _)
+            | InstructionInternal::SetGlobal(_, _)
+            | InstructionInternal::I32Load(_, _)
+            | InstructionInternal::I64Load(_, _)
+            | InstructionInternal::I32Load8S(_, _)
+            | InstructionInternal::I32Load8U(_, _)
+            | InstructionInternal::I32Load16S(_, _)
+            | InstructionInternal::I32Load16U(_, _)
+            | InstructionInternal::I64Load8S(_, _)
+            | InstructionInternal::I64Load8U(_, _)
+            | InstructionInternal::I64Load16S(_, _)
+            | InstructionInternal::I64Load16U(_, _)
+            | InstructionInternal::I64Load32S(_, _)
+            | InstructionInternal::I64Load32U(_, _)
+            | InstructionInternal::GrowMemory(_)
+            | InstructionInternal::I32Eqz(_)
+            | InstructionInternal::I64Eqz(_)
+            | InstructionInternal::I32Clz(_)
+            | InstructionInternal::I32Ctz(_)
+            | InstructionInternal::I32Popcnt(_)
+            | InstructionInternal::I64Clz(_)
+            | InstructionInternal::I64Ctz(_)
+            | InstructionInternal::I64Popcnt(_)
+            | InstructionInternal::I32WrapI64(_)
+            | InstructionInternal::I64ExtendSI32(_)
+            | InstructionInternal::I64ExtendUI32(_)
+            | InstructionInternal::I32Extend8S(_)
+            | InstructionInternal::I32Extend16S(_)
+            | InstructionInternal::I64Extend8S(_)
+            | InstructionInternal::I64Extend16S(_)
+            | InstructionInternal::I64Extend32S(_) => 1,
+            _ => 0,
+        }
+    }
+
+    pub(crate) fn update_uniarg(&mut self, uniargs: [Option<UniArg>; 2]) {
+        if self.get_uniarg_count() == 0 {
+            return;
+        }
+
+        match self {
+            InstructionInternal::Select(_, a, b)
+            | InstructionInternal::I32Store(_, a, b)
+            | InstructionInternal::I64Store(_, a, b)
+            | InstructionInternal::I32Store8(_, a, b)
+            | InstructionInternal::I32Store16(_, a, b)
+            | InstructionInternal::I64Store8(_, a, b)
+            | InstructionInternal::I64Store16(_, a, b)
+            | InstructionInternal::I64Store32(_, a, b)
+            | InstructionInternal::I32Eq(a, b)
+            | InstructionInternal::I32Ne(a, b)
+            | InstructionInternal::I32LtS(a, b)
+            | InstructionInternal::I32LtU(a, b)
+            | InstructionInternal::I32GtS(a, b)
+            | InstructionInternal::I32GtU(a, b)
+            | InstructionInternal::I32LeS(a, b)
+            | InstructionInternal::I32LeU(a, b)
+            | InstructionInternal::I32GeS(a, b)
+            | InstructionInternal::I32GeU(a, b)
+            | InstructionInternal::I64Eq(a, b)
+            | InstructionInternal::I64Ne(a, b)
+            | InstructionInternal::I64LtS(a, b)
+            | InstructionInternal::I64LtU(a, b)
+            | InstructionInternal::I64GtS(a, b)
+            | InstructionInternal::I64GtU(a, b)
+            | InstructionInternal::I64LeS(a, b)
+            | InstructionInternal::I64LeU(a, b)
+            | InstructionInternal::I64GeS(a, b)
+            | InstructionInternal::I64GeU(a, b)
+            | InstructionInternal::I32Add(a, b)
+            | InstructionInternal::I32Sub(a, b)
+            | InstructionInternal::I32Mul(a, b)
+            | InstructionInternal::I32DivS(a, b)
+            | InstructionInternal::I32DivU(a, b)
+            | InstructionInternal::I32RemS(a, b)
+            | InstructionInternal::I32RemU(a, b)
+            | InstructionInternal::I32And(a, b)
+            | InstructionInternal::I32Or(a, b)
+            | InstructionInternal::I32Xor(a, b)
+            | InstructionInternal::I32Shl(a, b)
+            | InstructionInternal::I32ShrS(a, b)
+            | InstructionInternal::I32ShrU(a, b)
+            | InstructionInternal::I32Rotl(a, b)
+            | InstructionInternal::I32Rotr(a, b)
+            | InstructionInternal::I64Add(a, b)
+            | InstructionInternal::I64Sub(a, b)
+            | InstructionInternal::I64Mul(a, b)
+            | InstructionInternal::I64DivS(a, b)
+            | InstructionInternal::I64DivU(a, b)
+            | InstructionInternal::I64RemS(a, b)
+            | InstructionInternal::I64RemU(a, b)
+            | InstructionInternal::I64And(a, b)
+            | InstructionInternal::I64Or(a, b)
+            | InstructionInternal::I64Xor(a, b)
+            | InstructionInternal::I64Shl(a, b)
+            | InstructionInternal::I64ShrS(a, b)
+            | InstructionInternal::I64ShrU(a, b)
+            | InstructionInternal::I64Rotl(a, b)
+            | InstructionInternal::I64Rotr(a, b) => {
+                *b = uniargs[0].unwrap();
+                *a = uniargs[1].unwrap();
+            }
+
+            InstructionInternal::BrIfEqz(_, arg)
+            | InstructionInternal::BrIfNez(_, arg)
+            | InstructionInternal::BrTable { arg, .. }
+            | InstructionInternal::CallIndirect(_, arg) => {
+                *arg = uniargs[0].unwrap();
+            }
+
+            InstructionInternal::SetLocal(_, _, arg)
+            | InstructionInternal::SetGlobal(_, arg)
+            | InstructionInternal::I32Load(_, arg)
+            | InstructionInternal::I64Load(_, arg)
+            | InstructionInternal::I32Load8S(_, arg)
+            | InstructionInternal::I32Load8U(_, arg)
+            | InstructionInternal::I32Load16S(_, arg)
+            | InstructionInternal::I32Load16U(_, arg)
+            | InstructionInternal::I64Load8S(_, arg)
+            | InstructionInternal::I64Load8U(_, arg)
+            | InstructionInternal::I64Load16S(_, arg)
+            | InstructionInternal::I64Load16U(_, arg)
+            | InstructionInternal::I64Load32S(_, arg)
+            | InstructionInternal::I64Load32U(_, arg)
+            | InstructionInternal::GrowMemory(arg)
+            | InstructionInternal::I32Eqz(arg)
+            | InstructionInternal::I64Eqz(arg)
+            | InstructionInternal::I32Clz(arg)
+            | InstructionInternal::I32Ctz(arg)
+            | InstructionInternal::I32Popcnt(arg)
+            | InstructionInternal::I64Clz(arg)
+            | InstructionInternal::I64Ctz(arg)
+            | InstructionInternal::I64Popcnt(arg)
+            | InstructionInternal::I32WrapI64(arg)
+            | InstructionInternal::I64ExtendSI32(arg)
+            | InstructionInternal::I64ExtendUI32(arg)
+            | InstructionInternal::I32Extend8S(arg)
+            | InstructionInternal::I32Extend16S(arg)
+            | InstructionInternal::I64Extend8S(arg)
+            | InstructionInternal::I64Extend16S(arg)
+            | InstructionInternal::I64Extend32S(arg) => {
+                *arg = uniargs[0].unwrap();
+            }
+            _ => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

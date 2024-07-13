@@ -354,8 +354,10 @@ impl Compiler {
                 let (depth, typ) =
                     relative_local_depth_type(index, &context.locals, &context.value_stack)?;
                 context.step(instruction)?;
-                self.sink
-                    .emit(isa::InstructionInternal::GetLocal(depth, typ));
+                self.sink.emit_uniarg(
+                    UniArg::Stack(depth as usize),
+                    isa::InstructionInternal::GetLocal(depth, typ),
+                );
             }
             SetLocal(index) => {
                 context.step(instruction)?;
@@ -527,11 +529,17 @@ impl Compiler {
 
             I32Const(v) => {
                 context.step(instruction)?;
-                self.sink.emit(isa::InstructionInternal::I32Const(v));
+                self.sink.emit_uniarg(
+                    UniArg::IConst(wasmi_core::Value::I32(v)),
+                    isa::InstructionInternal::I32Const(v),
+                );
             }
             I64Const(v) => {
                 context.step(instruction)?;
-                self.sink.emit(isa::InstructionInternal::I64Const(v));
+                self.sink.emit_uniarg(
+                    UniArg::IConst(wasmi_core::Value::I64(v)),
+                    isa::InstructionInternal::I64Const(v),
+                );
             }
             F32Const(v) => {
                 context.step(instruction)?;
@@ -1320,6 +1328,9 @@ enum Label {
 struct Sink {
     ins: isa::Instructions,
     labels: Vec<(Label, Vec<isa::Reloc>)>,
+
+    /// For UniArg optimizer
+    uncommitted_uniarg: Vec<(UniArg, isa::InstructionInternal)>,
 }
 
 impl Sink {
@@ -1327,6 +1338,7 @@ impl Sink {
         Sink {
             ins: isa::Instructions::with_capacity(capacity),
             labels: Vec::new(),
+            uncommitted_uniarg: vec![],
         }
     }
 
@@ -1348,11 +1360,54 @@ impl Sink {
         }
     }
 
-    fn emit(&mut self, instruction: isa::InstructionInternal) {
+    fn commit_uniarg(&mut self) {
+        let mut const_ins = vec![];
+        std::mem::swap(&mut const_ins, &mut self.uncommitted_uniarg);
+        for ins in const_ins {
+            self.ins.push(ins.1)
+        }
+    }
+
+    fn emit_uniarg(&mut self, uniarg: UniArg, instruction: isa::InstructionInternal) {
+        self.uncommitted_uniarg.push((uniarg, instruction));
+    }
+
+    fn emit(&mut self, mut instruction: isa::InstructionInternal) {
+        if !self.uncommitted_uniarg.is_empty() {
+            let mut args = [None; 2];
+
+            for _ in 0..instruction.get_uniarg_skip_count() {
+                self.ins.push(self.uncommitted_uniarg.pop().unwrap().1)
+            }
+
+            for i in 0..instruction.get_uniarg_count() {
+                args[i] = self.uncommitted_uniarg.pop().map(|x| x.0);
+                if args[i].is_some() {
+                    for j in 0..i {
+                        args[j]
+                            .iter_mut()
+                            .next()
+                            .map(|x| x.try_decease_stack_depth(1));
+                    }
+                } else {
+                    args[i] = Some(UniArg::Pop)
+                }
+            }
+
+            instruction.update_uniarg(args);
+
+            if !self.uncommitted_uniarg.is_empty() {
+                println!("this instruction is {:?}", instruction)
+            }
+            self.commit_uniarg();
+        }
+
         self.ins.push(instruction);
     }
 
     fn emit_br(&mut self, target: Target) {
+        self.commit_uniarg();
+
         let Target { label, drop_keep } = target;
         let pc = self.cur_pc();
         let dst_pc = self.pc_or_placeholder(label, || isa::Reloc::Br { pc });
@@ -1363,6 +1418,8 @@ impl Sink {
     }
 
     fn emit_br_eqz(&mut self, target: Target) {
+        self.commit_uniarg();
+
         let Target { label, drop_keep } = target;
         let pc = self.cur_pc();
         let dst_pc = self.pc_or_placeholder(label, || isa::Reloc::Br { pc });
@@ -1373,6 +1430,8 @@ impl Sink {
     }
 
     fn emit_br_nez(&mut self, target: Target) {
+        self.commit_uniarg();
+
         let Target { label, drop_keep } = target;
         let pc = self.cur_pc();
         let dst_pc = self.pc_or_placeholder(label, || isa::Reloc::Br { pc });
@@ -1383,6 +1442,8 @@ impl Sink {
     }
 
     fn emit_br_table(&mut self, targets: &[Target], default: Target) {
+        self.commit_uniarg();
+
         use core::iter;
 
         let pc = self.cur_pc();
@@ -1406,6 +1467,8 @@ impl Sink {
 
     /// Create a new unresolved label.
     fn new_label(&mut self) -> LabelId {
+        self.commit_uniarg();
+
         let label_idx = self.labels.len();
         self.labels.push((Label::NotResolved, Vec::new()));
         LabelId(label_idx)
@@ -1415,6 +1478,8 @@ impl Sink {
     ///
     /// Panics if the label is already resolved.
     fn resolve_label(&mut self, label: LabelId) {
+        self.commit_uniarg();
+
         use core::mem;
 
         if let (Label::Resolved(_), _) = self.labels[label.0] {
