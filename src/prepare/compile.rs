@@ -1,8 +1,9 @@
 use alloc::{string::String, vec::Vec};
 
 use parity_wasm::elements::{BlockType, FuncBody, Instruction, SignExtInstruction, ValueType};
+use specs::{itable::UniArg, types::Value};
 
-use crate::isa::{self, InstructionInternal, UniArg};
+use crate::isa::{self, InstructionInternal};
 use validation::{
     func::{
         require_label,
@@ -530,14 +531,14 @@ impl Compiler {
             I32Const(v) => {
                 context.step(instruction)?;
                 self.sink.emit_uniarg(
-                    UniArg::IConst(wasmi_core::Value::I32(v)),
+                    UniArg::IConst(Value::I32(v)),
                     isa::InstructionInternal::I32Const(v),
                 );
             }
             I64Const(v) => {
                 context.step(instruction)?;
                 self.sink.emit_uniarg(
-                    UniArg::IConst(wasmi_core::Value::I64(v)),
+                    UniArg::IConst(Value::I64(v)),
                     isa::InstructionInternal::I64Const(v),
                 );
             }

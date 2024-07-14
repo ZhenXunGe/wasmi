@@ -3,7 +3,7 @@
 use crate::{
     func::{FuncInstance, FuncInstanceInternal, FuncRef},
     host::Externals,
-    isa::{self, UniArg},
+    isa::{self},
     memory::MemoryRef,
     memory_units::Pages,
     module::ModuleRef,
@@ -28,7 +28,7 @@ use crate::{
 use alloc::{boxed::Box, vec::Vec};
 use core::{fmt, ops, u32, usize};
 use parity_wasm::elements::Local;
-use specs::mtable::VarType;
+use specs::{itable::UniArg, mtable::VarType, types::Value};
 use validation::{DEFAULT_MEMORY_INDEX, DEFAULT_TABLE_INDEX};
 
 /// Maximum number of bytes on the value stack.
@@ -61,6 +61,15 @@ impl ValueInternal {
             ValueType::I64 => RuntimeValue::I64(<_>::from_value_internal(self)),
             ValueType::F32 => RuntimeValue::F32(<_>::from_value_internal(self)),
             ValueType::F64 => RuntimeValue::F64(<_>::from_value_internal(self)),
+        }
+    }
+}
+
+impl From<Value> for ValueInternal {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::I32(val) => val.into(),
+            Value::I64(val) => val.into(),
         }
     }
 }

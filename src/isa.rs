@@ -69,7 +69,7 @@
 
 use alloc::vec::Vec;
 use parity_wasm::elements::ValueType;
-use specs::itable::UnaryOp;
+use specs::itable::{UnaryOp, UniArg};
 
 /// Should we keep a value before "discarding" a stack frame?
 ///
@@ -132,22 +132,6 @@ impl<'a> BrTargets<'a> {
         match self.stream[index.min(self.stream.len() as u32 - 1) as usize] {
             InstructionInternal::BrTableTarget(target) => target,
             _ => panic!("BrTable has incorrect target count"),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum UniArg {
-    Pop,
-    Stack(usize),
-    IConst(wasmi_core::Value),
-}
-
-impl UniArg {
-    pub(crate) fn try_decease_stack_depth(&mut self, diff: usize) {
-        match self {
-            UniArg::Stack(i) => *self = UniArg::Stack(*i - diff),
-            _ => {}
         }
     }
 }
