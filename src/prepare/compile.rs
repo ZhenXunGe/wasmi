@@ -1374,6 +1374,9 @@ impl Sink {
     }
 
     fn emit(&mut self, mut instruction: isa::InstructionInternal) {
+        // disable optimization for now
+        self.commit_uniarg();
+
         if !self.uncommitted_uniarg.is_empty() {
             let mut args = [None; 2];
 
