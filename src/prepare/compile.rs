@@ -343,6 +343,7 @@ impl Compiler {
                         *t,
                         UniArg::Pop,
                         UniArg::Pop,
+                        UniArg::Pop,
                     ));
                 } else {
                     unreachable!()
@@ -1378,7 +1379,7 @@ impl Sink {
         self.commit_uniarg();
 
         if !self.uncommitted_uniarg.is_empty() {
-            let mut args = [None; 2];
+            let mut args = [None; 3];
 
             for _ in 0..instruction.get_uniarg_skip_count() {
                 self.ins.push(self.uncommitted_uniarg.pop().unwrap().1)

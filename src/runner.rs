@@ -468,7 +468,7 @@ impl<'m> Interpreter<'m> {
             isa::Instruction::CallIndirect(index, a) => self.run_call_indirect(context, *index, a),
 
             isa::Instruction::Drop => self.run_drop(),
-            isa::Instruction::Select(_, arg0, arg1) => self.run_select(arg0, arg1),
+            isa::Instruction::Select(_, lhs, rhs, cond) => self.run_select(lhs, rhs, cond),
 
             isa::Instruction::GetLocal(depth, ..) => self.run_get_local(*depth),
             isa::Instruction::SetLocal(depth, _, arg0) => self.run_set_local(*depth, arg0),
@@ -797,12 +797,17 @@ impl<'m> Interpreter<'m> {
         Ok(InstructionOutcome::RunNextInstruction)
     }
 
-    fn run_select(&mut self, arg0: &UniArg, arg1: &UniArg) -> Result<InstructionOutcome, TrapCode> {
-        let condition = self.value_stack.handle_uniarg(arg1);
-        let mid = self.value_stack.handle_uniarg_raw(arg0);
-        let left = self.value_stack.pop();
+    fn run_select(
+        &mut self,
+        lhs: &UniArg,
+        rhs: &UniArg,
+        cond: &UniArg,
+    ) -> Result<InstructionOutcome, TrapCode> {
+        let condition = self.value_stack.handle_uniarg(cond);
+        let right = self.value_stack.handle_uniarg_raw(rhs);
+        let left = self.value_stack.handle_uniarg_raw(lhs);
 
-        let val = if condition { left } else { mid };
+        let val = if condition { left } else { right };
         self.value_stack.push(val)?;
         Ok(InstructionOutcome::RunNextInstruction)
     }

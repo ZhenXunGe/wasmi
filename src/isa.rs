@@ -174,7 +174,7 @@ pub enum Instruction<'a> {
     CallIndirect(u32, UniArg),
 
     Drop,
-    Select(ValueType, UniArg, UniArg),
+    Select(ValueType, UniArg, UniArg, UniArg),
 
     GetGlobal(u32),
     SetGlobal(u32, UniArg),
@@ -387,7 +387,7 @@ pub enum InstructionInternal {
     CallIndirect(u32, UniArg),
 
     Drop,
-    Select(ValueType, UniArg, UniArg),
+    Select(ValueType, UniArg, UniArg, UniArg),
 
     GetGlobal(u32),
     SetGlobal(u32, UniArg),
@@ -571,8 +571,8 @@ impl InstructionInternal {
 
     pub(crate) fn get_uniarg_count(&self) -> usize {
         match self {
-            InstructionInternal::Select(_, _, _)
-            | InstructionInternal::I32Store(_, _, _)
+            InstructionInternal::Select(_, _, _, _) => 3,
+            InstructionInternal::I32Store(_, _, _)
             | InstructionInternal::I64Store(_, _, _)
             | InstructionInternal::I32Store8(_, _, _)
             | InstructionInternal::I32Store16(_, _, _)
@@ -670,14 +670,19 @@ impl InstructionInternal {
         }
     }
 
-    pub(crate) fn update_uniarg(&mut self, uniargs: [Option<UniArg>; 2]) {
+    pub(crate) fn update_uniarg(&mut self, uniargs: [Option<UniArg>; 3]) {
         if self.get_uniarg_count() == 0 {
             return;
         }
 
         match self {
-            InstructionInternal::Select(_, a, b)
-            | InstructionInternal::I32Store(_, a, b)
+            InstructionInternal::Select(_, a, b, c) => {
+                *c = uniargs[0].unwrap();
+                *b = uniargs[1].unwrap();
+                *a = uniargs[2].unwrap();
+            }
+
+            InstructionInternal::I32Store(_, a, b)
             | InstructionInternal::I64Store(_, a, b)
             | InstructionInternal::I32Store8(_, a, b)
             | InstructionInternal::I32Store16(_, a, b)
@@ -871,8 +876,8 @@ impl<'a> Iterator for InstructionIter<'a> {
             InstructionInternal::CallIndirect(x, arg) => Instruction::CallIndirect(x, arg),
 
             InstructionInternal::Drop => Instruction::Drop,
-            InstructionInternal::Select(vtype, arg0, arg1) => {
-                Instruction::Select(vtype, arg0, arg1)
+            InstructionInternal::Select(vtype, lhs, rhs, cond) => {
+                Instruction::Select(vtype, lhs, rhs, cond)
             }
 
             InstructionInternal::GetGlobal(x) => Instruction::GetGlobal(x),
