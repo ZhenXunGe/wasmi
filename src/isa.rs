@@ -69,7 +69,7 @@
 
 use alloc::vec::Vec;
 use parity_wasm::elements::ValueType;
-use specs::itable::{BinOp, UnaryOp, UniArg};
+use specs::itable::{BinOp, BinaryOp, BitOp, ShiftOp, UnaryOp, UniArg};
 
 /// Should we keep a value before "discarding" a stack frame?
 ///
@@ -367,6 +367,62 @@ impl<'a> From<&Instruction<'a>> for BinOp {
             Instruction::I64DivU(_, _) => BinOp::UnsignedDiv,
             Instruction::I64RemS(_, _) => BinOp::SignedRem,
             Instruction::I64RemU(_, _) => BinOp::UnsignedRem,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'a> From<&Instruction<'a>> for BitOp {
+    fn from(value: &Instruction<'a>) -> Self {
+        match value {
+            Instruction::I32And(_, _) | Instruction::I64And(_, _) => BitOp::And,
+            Instruction::I32Or(_, _) | Instruction::I64Or(_, _) => BitOp::Or,
+            Instruction::I32Xor(_, _) | Instruction::I64Xor(_, _) => BitOp::Xor,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'a> From<&Instruction<'a>> for ShiftOp {
+    fn from(value: &Instruction<'a>) -> Self {
+        match value {
+            Instruction::I32Shl(_, _) | Instruction::I64Shl(_, _) => ShiftOp::Shl,
+            Instruction::I32ShrS(_, _) | Instruction::I64ShrS(_, _) => ShiftOp::SignedShr,
+            Instruction::I32ShrU(_, _) | Instruction::I64ShrU(_, _) => ShiftOp::UnsignedShr,
+            Instruction::I32Rotl(_, _) | Instruction::I64Rotl(_, _) => ShiftOp::Rotl,
+            Instruction::I32Rotr(_, _) | Instruction::I64Rotr(_, _) => ShiftOp::Rotr,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'a> From<&Instruction<'a>> for BinaryOp {
+    fn from(value: &Instruction<'a>) -> Self {
+        match value {
+            Instruction::I32Add(_, _) => BinOp::Add.into(),
+            Instruction::I32Sub(_, _) => BinOp::Sub.into(),
+            Instruction::I32Mul(_, _) => BinOp::Mul.into(),
+            Instruction::I32DivS(_, _) => BinOp::SignedDiv.into(),
+            Instruction::I32DivU(_, _) => BinOp::UnsignedDiv.into(),
+            Instruction::I32RemS(_, _) => BinOp::SignedRem.into(),
+            Instruction::I32RemU(_, _) => BinOp::UnsignedRem.into(),
+            Instruction::I64Add(_, _) => BinOp::Add.into(),
+            Instruction::I64Sub(_, _) => BinOp::Sub.into(),
+            Instruction::I64Mul(_, _) => BinOp::Mul.into(),
+            Instruction::I64DivS(_, _) => BinOp::SignedDiv.into(),
+            Instruction::I64DivU(_, _) => BinOp::UnsignedDiv.into(),
+            Instruction::I64RemS(_, _) => BinOp::SignedRem.into(),
+            Instruction::I64RemU(_, _) => BinOp::UnsignedRem.into(),
+
+            Instruction::I32And(_, _) | Instruction::I64And(_, _) => BitOp::And.into(),
+            Instruction::I32Or(_, _) | Instruction::I64Or(_, _) => BitOp::Or.into(),
+            Instruction::I32Xor(_, _) | Instruction::I64Xor(_, _) => BitOp::Xor.into(),
+
+            Instruction::I32Shl(_, _) | Instruction::I64Shl(_, _) => ShiftOp::Shl.into(),
+            Instruction::I32ShrS(_, _) | Instruction::I64ShrS(_, _) => ShiftOp::SignedShr.into(),
+            Instruction::I32ShrU(_, _) | Instruction::I64ShrU(_, _) => ShiftOp::UnsignedShr.into(),
+            Instruction::I32Rotl(_, _) | Instruction::I64Rotl(_, _) => ShiftOp::Rotl.into(),
+            Instruction::I32Rotr(_, _) | Instruction::I64Rotr(_, _) => ShiftOp::Rotr.into(),
 
             _ => unreachable!(),
         }
