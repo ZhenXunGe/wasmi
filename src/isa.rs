@@ -69,7 +69,7 @@
 
 use alloc::vec::Vec;
 use parity_wasm::elements::ValueType;
-use specs::itable::{UnaryOp, UniArg};
+use specs::itable::{BinOp, UnaryOp, UniArg};
 
 /// Should we keep a value before "discarding" a stack frame?
 ///
@@ -349,8 +349,32 @@ pub enum Instruction<'a> {
     I64Extend32S(UniArg),
 }
 
-impl<'a> From<Instruction<'a>> for UnaryOp {
-    fn from(value: Instruction<'a>) -> Self {
+impl<'a> From<&Instruction<'a>> for BinOp {
+    fn from(value: &Instruction<'a>) -> Self {
+        match value {
+            Instruction::I32Add(_, _) => BinOp::Add,
+            Instruction::I32Sub(_, _) => BinOp::Sub,
+            Instruction::I32Mul(_, _) => BinOp::Mul,
+            Instruction::I32DivS(_, _) => BinOp::SignedDiv,
+            Instruction::I32DivU(_, _) => BinOp::UnsignedDiv,
+            Instruction::I32RemS(_, _) => BinOp::SignedRem,
+            Instruction::I32RemU(_, _) => BinOp::UnsignedRem,
+
+            Instruction::I64Add(_, _) => BinOp::Add,
+            Instruction::I64Sub(_, _) => BinOp::Sub,
+            Instruction::I64Mul(_, _) => BinOp::Mul,
+            Instruction::I64DivS(_, _) => BinOp::SignedDiv,
+            Instruction::I64DivU(_, _) => BinOp::UnsignedDiv,
+            Instruction::I64RemS(_, _) => BinOp::SignedRem,
+            Instruction::I64RemU(_, _) => BinOp::UnsignedRem,
+
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'a> From<&Instruction<'a>> for UnaryOp {
+    fn from(value: &Instruction<'a>) -> Self {
         match value {
             Instruction::I32Clz(_) | Instruction::I64Clz(_) => UnaryOp::Clz,
             Instruction::I32Ctz(_) | Instruction::I64Ctz(_) => UnaryOp::Ctz,

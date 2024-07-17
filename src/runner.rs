@@ -65,11 +65,11 @@ impl ValueInternal {
     }
 }
 
-impl From<Value> for ValueInternal {
-    fn from(value: Value) -> Self {
+impl From<&Value> for ValueInternal {
+    fn from(value: &Value) -> Self {
         match value {
-            Value::I32(val) => val.into(),
-            Value::I64(val) => val.into(),
+            Value::I32(val) => (*val).into(),
+            Value::I64(val) => (*val).into(),
         }
     }
 }
@@ -1597,7 +1597,7 @@ impl ValueStack {
         match arg {
             UniArg::Pop => self.pop(),
             UniArg::Stack(i) => *self.pick(*i),
-            UniArg::IConst(c) => (*c).into(),
+            UniArg::IConst(c) => c.into(),
         }
     }
 
