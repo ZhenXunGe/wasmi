@@ -69,7 +69,7 @@
 
 use alloc::vec::Vec;
 use parity_wasm::elements::ValueType;
-use specs::itable::{BinOp, BinaryOp, BitOp, ShiftOp, UnaryOp, UniArg};
+use specs::itable::{BinOp, BinaryOp, BitOp, RelOp, ShiftOp, UnaryOp, UniArg};
 
 /// Should we keep a value before "discarding" a stack frame?
 ///
@@ -396,6 +396,25 @@ impl<'a> From<&Instruction<'a>> for ShiftOp {
     }
 }
 
+impl<'a> From<&Instruction<'a>> for RelOp {
+    fn from(value: &Instruction<'a>) -> Self {
+        match value {
+            Instruction::I32Eq(_, _) | Instruction::I64Eq(_, _) => RelOp::Eq,
+            Instruction::I32Ne(_, _) | Instruction::I64Ne(_, _) => RelOp::Ne,
+            Instruction::I32LtS(_, _) | Instruction::I64LtS(_, _) => RelOp::SignedLt,
+            Instruction::I32LtU(_, _) | Instruction::I64LtU(_, _) => RelOp::UnsignedLt,
+            Instruction::I32GtS(_, _) | Instruction::I64GtS(_, _) => RelOp::SignedGt,
+            Instruction::I32GtU(_, _) | Instruction::I64GtU(_, _) => RelOp::UnsignedGt,
+            Instruction::I32LeS(_, _) | Instruction::I64LeS(_, _) => RelOp::SignedLe,
+            Instruction::I32LeU(_, _) | Instruction::I64LeU(_, _) => RelOp::UnsignedLe,
+            Instruction::I32GeS(_, _) | Instruction::I64GeS(_, _) => RelOp::SignedGe,
+            Instruction::I32GeU(_, _) | Instruction::I64GeU(_, _) => RelOp::UnsignedGe,
+
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl<'a> From<&Instruction<'a>> for BinaryOp {
     fn from(value: &Instruction<'a>) -> Self {
         match value {
@@ -423,6 +442,17 @@ impl<'a> From<&Instruction<'a>> for BinaryOp {
             Instruction::I32ShrU(_, _) | Instruction::I64ShrU(_, _) => ShiftOp::UnsignedShr.into(),
             Instruction::I32Rotl(_, _) | Instruction::I64Rotl(_, _) => ShiftOp::Rotl.into(),
             Instruction::I32Rotr(_, _) | Instruction::I64Rotr(_, _) => ShiftOp::Rotr.into(),
+
+            Instruction::I32Eq(_, _) | Instruction::I64Eq(_, _) => RelOp::Eq.into(),
+            Instruction::I32Ne(_, _) | Instruction::I64Ne(_, _) => RelOp::Ne.into(),
+            Instruction::I32LtS(_, _) | Instruction::I64LtS(_, _) => RelOp::SignedLt.into(),
+            Instruction::I32LtU(_, _) | Instruction::I64LtU(_, _) => RelOp::UnsignedLt.into(),
+            Instruction::I32GtS(_, _) | Instruction::I64GtS(_, _) => RelOp::SignedGt.into(),
+            Instruction::I32GtU(_, _) | Instruction::I64GtU(_, _) => RelOp::UnsignedGt.into(),
+            Instruction::I32LeS(_, _) | Instruction::I64LeS(_, _) => RelOp::SignedLe.into(),
+            Instruction::I32LeU(_, _) | Instruction::I64LeU(_, _) => RelOp::UnsignedLe.into(),
+            Instruction::I32GeS(_, _) | Instruction::I64GeS(_, _) => RelOp::SignedGe.into(),
+            Instruction::I32GeU(_, _) | Instruction::I64GeU(_, _) => RelOp::UnsignedGe.into(),
 
             _ => unreachable!(),
         }
