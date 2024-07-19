@@ -69,7 +69,7 @@
 
 use alloc::vec::Vec;
 use parity_wasm::elements::ValueType;
-use specs::itable::UnaryOp;
+use specs::itable::{BinOp, BinaryOp, BitOp, RelOp, ShiftOp, UnaryOp, UniArg};
 
 /// Should we keep a value before "discarding" a stack frame?
 ///
@@ -145,7 +145,7 @@ pub enum Instruction<'a> {
     GetLocal(u32, ValueType),
 
     /// Pop a value and put it in at the specified depth.
-    SetLocal(u32, ValueType),
+    SetLocal(u32, ValueType, UniArg),
 
     /// Copy a value to the specified depth.
     TeeLocal(u32, ValueType),
@@ -153,8 +153,8 @@ pub enum Instruction<'a> {
     /// Similar to the Wasm ones, but instead of a label depth
     /// they specify direct PC.
     Br(Target),
-    BrIfEqz(Target),
-    BrIfNez(Target),
+    BrIfEqz(Target, UniArg),
+    BrIfNez(Target, UniArg),
 
     /// br_table [t1 t2 t3 .. tn] tdefault
     ///
@@ -165,75 +165,75 @@ pub enum Instruction<'a> {
     /// is greater than length of the branch table, then the last index will be used.
     ///
     /// Validation ensures that there should be at least one target.
-    BrTable(BrTargets<'a>),
+    BrTable(BrTargets<'a>, UniArg),
 
     Unreachable,
     Return(DropKeep),
 
     Call(u32),
-    CallIndirect(u32),
+    CallIndirect(u32, UniArg),
 
     Drop,
-    Select(ValueType),
+    Select(ValueType, UniArg, UniArg, UniArg),
 
     GetGlobal(u32),
-    SetGlobal(u32),
+    SetGlobal(u32, UniArg),
 
-    I32Load(u32),
-    I64Load(u32),
+    I32Load(u32, UniArg),
+    I64Load(u32, UniArg),
     F32Load(u32),
     F64Load(u32),
-    I32Load8S(u32),
-    I32Load8U(u32),
-    I32Load16S(u32),
-    I32Load16U(u32),
-    I64Load8S(u32),
-    I64Load8U(u32),
-    I64Load16S(u32),
-    I64Load16U(u32),
-    I64Load32S(u32),
-    I64Load32U(u32),
-    I32Store(u32),
-    I64Store(u32),
+    I32Load8S(u32, UniArg),
+    I32Load8U(u32, UniArg),
+    I32Load16S(u32, UniArg),
+    I32Load16U(u32, UniArg),
+    I64Load8S(u32, UniArg),
+    I64Load8U(u32, UniArg),
+    I64Load16S(u32, UniArg),
+    I64Load16U(u32, UniArg),
+    I64Load32S(u32, UniArg),
+    I64Load32U(u32, UniArg),
+    I32Store(u32, UniArg, UniArg),
+    I64Store(u32, UniArg, UniArg),
     F32Store(u32),
     F64Store(u32),
-    I32Store8(u32),
-    I32Store16(u32),
-    I64Store8(u32),
-    I64Store16(u32),
-    I64Store32(u32),
+    I32Store8(u32, UniArg, UniArg),
+    I32Store16(u32, UniArg, UniArg),
+    I64Store8(u32, UniArg, UniArg),
+    I64Store16(u32, UniArg, UniArg),
+    I64Store32(u32, UniArg, UniArg),
 
     CurrentMemory,
-    GrowMemory,
+    GrowMemory(UniArg),
 
     I32Const(i32),
     I64Const(i64),
     F32Const(u32),
     F64Const(u64),
 
-    I32Eqz,
-    I32Eq,
-    I32Ne,
-    I32LtS,
-    I32LtU,
-    I32GtS,
-    I32GtU,
-    I32LeS,
-    I32LeU,
-    I32GeS,
-    I32GeU,
+    I32Eqz(UniArg),
+    I32Eq(UniArg, UniArg),
+    I32Ne(UniArg, UniArg),
+    I32LtS(UniArg, UniArg),
+    I32LtU(UniArg, UniArg),
+    I32GtS(UniArg, UniArg),
+    I32GtU(UniArg, UniArg),
+    I32LeS(UniArg, UniArg),
+    I32LeU(UniArg, UniArg),
+    I32GeS(UniArg, UniArg),
+    I32GeU(UniArg, UniArg),
 
-    I64Eqz,
-    I64Eq,
-    I64Ne,
-    I64LtS,
-    I64LtU,
-    I64GtS,
-    I64GtU,
-    I64LeS,
-    I64LeU,
-    I64GeS,
-    I64GeU,
+    I64Eqz(UniArg),
+    I64Eq(UniArg, UniArg),
+    I64Ne(UniArg, UniArg),
+    I64LtS(UniArg, UniArg),
+    I64LtU(UniArg, UniArg),
+    I64GtS(UniArg, UniArg),
+    I64GtU(UniArg, UniArg),
+    I64LeS(UniArg, UniArg),
+    I64LeU(UniArg, UniArg),
+    I64GeS(UniArg, UniArg),
+    I64GeU(UniArg, UniArg),
 
     F32Eq,
     F32Ne,
@@ -249,43 +249,43 @@ pub enum Instruction<'a> {
     F64Le,
     F64Ge,
 
-    I32Clz,
-    I32Ctz,
-    I32Popcnt,
-    I32Add,
-    I32Sub,
-    I32Mul,
-    I32DivS,
-    I32DivU,
-    I32RemS,
-    I32RemU,
-    I32And,
-    I32Or,
-    I32Xor,
-    I32Shl,
-    I32ShrS,
-    I32ShrU,
-    I32Rotl,
-    I32Rotr,
+    I32Clz(UniArg),
+    I32Ctz(UniArg),
+    I32Popcnt(UniArg),
+    I32Add(UniArg, UniArg),
+    I32Sub(UniArg, UniArg),
+    I32Mul(UniArg, UniArg),
+    I32DivS(UniArg, UniArg),
+    I32DivU(UniArg, UniArg),
+    I32RemS(UniArg, UniArg),
+    I32RemU(UniArg, UniArg),
+    I32And(UniArg, UniArg),
+    I32Or(UniArg, UniArg),
+    I32Xor(UniArg, UniArg),
+    I32Shl(UniArg, UniArg),
+    I32ShrS(UniArg, UniArg),
+    I32ShrU(UniArg, UniArg),
+    I32Rotl(UniArg, UniArg),
+    I32Rotr(UniArg, UniArg),
 
-    I64Clz,
-    I64Ctz,
-    I64Popcnt,
-    I64Add,
-    I64Sub,
-    I64Mul,
-    I64DivS,
-    I64DivU,
-    I64RemS,
-    I64RemU,
-    I64And,
-    I64Or,
-    I64Xor,
-    I64Shl,
-    I64ShrS,
-    I64ShrU,
-    I64Rotl,
-    I64Rotr,
+    I64Clz(UniArg),
+    I64Ctz(UniArg),
+    I64Popcnt(UniArg),
+    I64Add(UniArg, UniArg),
+    I64Sub(UniArg, UniArg),
+    I64Mul(UniArg, UniArg),
+    I64DivS(UniArg, UniArg),
+    I64DivU(UniArg, UniArg),
+    I64RemS(UniArg, UniArg),
+    I64RemU(UniArg, UniArg),
+    I64And(UniArg, UniArg),
+    I64Or(UniArg, UniArg),
+    I64Xor(UniArg, UniArg),
+    I64Shl(UniArg, UniArg),
+    I64ShrS(UniArg, UniArg),
+    I64ShrU(UniArg, UniArg),
+    I64Rotl(UniArg, UniArg),
+    I64Rotr(UniArg, UniArg),
     F32Abs,
     F32Neg,
     F32Ceil,
@@ -315,13 +315,13 @@ pub enum Instruction<'a> {
     F64Max,
     F64Copysign,
 
-    I32WrapI64,
+    I32WrapI64(UniArg),
     I32TruncSF32,
     I32TruncUF32,
     I32TruncSF64,
     I32TruncUF64,
-    I64ExtendSI32,
-    I64ExtendUI32,
+    I64ExtendSI32(UniArg),
+    I64ExtendUI32(UniArg),
     I64TruncSF32,
     I64TruncUF32,
     I64TruncSF64,
@@ -342,19 +342,129 @@ pub enum Instruction<'a> {
     F32ReinterpretI32,
     F64ReinterpretI64,
 
-    I32Extend8S,
-    I32Extend16S,
-    I64Extend8S,
-    I64Extend16S,
-    I64Extend32S,
+    I32Extend8S(UniArg),
+    I32Extend16S(UniArg),
+    I64Extend8S(UniArg),
+    I64Extend16S(UniArg),
+    I64Extend32S(UniArg),
 }
 
-impl<'a> From<Instruction<'a>> for UnaryOp {
-    fn from(value: Instruction<'a>) -> Self {
+impl<'a> From<&Instruction<'a>> for BinOp {
+    fn from(value: &Instruction<'a>) -> Self {
         match value {
-            Instruction::I32Clz | Instruction::I64Clz => UnaryOp::Clz,
-            Instruction::I32Ctz | Instruction::I64Ctz => UnaryOp::Ctz,
-            Instruction::I32Popcnt | Instruction::I64Popcnt => UnaryOp::Popcnt,
+            Instruction::I32Add(_, _) => BinOp::Add,
+            Instruction::I32Sub(_, _) => BinOp::Sub,
+            Instruction::I32Mul(_, _) => BinOp::Mul,
+            Instruction::I32DivS(_, _) => BinOp::SignedDiv,
+            Instruction::I32DivU(_, _) => BinOp::UnsignedDiv,
+            Instruction::I32RemS(_, _) => BinOp::SignedRem,
+            Instruction::I32RemU(_, _) => BinOp::UnsignedRem,
+
+            Instruction::I64Add(_, _) => BinOp::Add,
+            Instruction::I64Sub(_, _) => BinOp::Sub,
+            Instruction::I64Mul(_, _) => BinOp::Mul,
+            Instruction::I64DivS(_, _) => BinOp::SignedDiv,
+            Instruction::I64DivU(_, _) => BinOp::UnsignedDiv,
+            Instruction::I64RemS(_, _) => BinOp::SignedRem,
+            Instruction::I64RemU(_, _) => BinOp::UnsignedRem,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'a> From<&Instruction<'a>> for BitOp {
+    fn from(value: &Instruction<'a>) -> Self {
+        match value {
+            Instruction::I32And(_, _) | Instruction::I64And(_, _) => BitOp::And,
+            Instruction::I32Or(_, _) | Instruction::I64Or(_, _) => BitOp::Or,
+            Instruction::I32Xor(_, _) | Instruction::I64Xor(_, _) => BitOp::Xor,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'a> From<&Instruction<'a>> for ShiftOp {
+    fn from(value: &Instruction<'a>) -> Self {
+        match value {
+            Instruction::I32Shl(_, _) | Instruction::I64Shl(_, _) => ShiftOp::Shl,
+            Instruction::I32ShrS(_, _) | Instruction::I64ShrS(_, _) => ShiftOp::SignedShr,
+            Instruction::I32ShrU(_, _) | Instruction::I64ShrU(_, _) => ShiftOp::UnsignedShr,
+            Instruction::I32Rotl(_, _) | Instruction::I64Rotl(_, _) => ShiftOp::Rotl,
+            Instruction::I32Rotr(_, _) | Instruction::I64Rotr(_, _) => ShiftOp::Rotr,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'a> From<&Instruction<'a>> for RelOp {
+    fn from(value: &Instruction<'a>) -> Self {
+        match value {
+            Instruction::I32Eq(_, _) | Instruction::I64Eq(_, _) => RelOp::Eq,
+            Instruction::I32Ne(_, _) | Instruction::I64Ne(_, _) => RelOp::Ne,
+            Instruction::I32LtS(_, _) | Instruction::I64LtS(_, _) => RelOp::SignedLt,
+            Instruction::I32LtU(_, _) | Instruction::I64LtU(_, _) => RelOp::UnsignedLt,
+            Instruction::I32GtS(_, _) | Instruction::I64GtS(_, _) => RelOp::SignedGt,
+            Instruction::I32GtU(_, _) | Instruction::I64GtU(_, _) => RelOp::UnsignedGt,
+            Instruction::I32LeS(_, _) | Instruction::I64LeS(_, _) => RelOp::SignedLe,
+            Instruction::I32LeU(_, _) | Instruction::I64LeU(_, _) => RelOp::UnsignedLe,
+            Instruction::I32GeS(_, _) | Instruction::I64GeS(_, _) => RelOp::SignedGe,
+            Instruction::I32GeU(_, _) | Instruction::I64GeU(_, _) => RelOp::UnsignedGe,
+
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'a> From<&Instruction<'a>> for BinaryOp {
+    fn from(value: &Instruction<'a>) -> Self {
+        match value {
+            Instruction::I32Add(_, _) => BinOp::Add.into(),
+            Instruction::I32Sub(_, _) => BinOp::Sub.into(),
+            Instruction::I32Mul(_, _) => BinOp::Mul.into(),
+            Instruction::I32DivS(_, _) => BinOp::SignedDiv.into(),
+            Instruction::I32DivU(_, _) => BinOp::UnsignedDiv.into(),
+            Instruction::I32RemS(_, _) => BinOp::SignedRem.into(),
+            Instruction::I32RemU(_, _) => BinOp::UnsignedRem.into(),
+            Instruction::I64Add(_, _) => BinOp::Add.into(),
+            Instruction::I64Sub(_, _) => BinOp::Sub.into(),
+            Instruction::I64Mul(_, _) => BinOp::Mul.into(),
+            Instruction::I64DivS(_, _) => BinOp::SignedDiv.into(),
+            Instruction::I64DivU(_, _) => BinOp::UnsignedDiv.into(),
+            Instruction::I64RemS(_, _) => BinOp::SignedRem.into(),
+            Instruction::I64RemU(_, _) => BinOp::UnsignedRem.into(),
+
+            Instruction::I32And(_, _) | Instruction::I64And(_, _) => BitOp::And.into(),
+            Instruction::I32Or(_, _) | Instruction::I64Or(_, _) => BitOp::Or.into(),
+            Instruction::I32Xor(_, _) | Instruction::I64Xor(_, _) => BitOp::Xor.into(),
+
+            Instruction::I32Shl(_, _) | Instruction::I64Shl(_, _) => ShiftOp::Shl.into(),
+            Instruction::I32ShrS(_, _) | Instruction::I64ShrS(_, _) => ShiftOp::SignedShr.into(),
+            Instruction::I32ShrU(_, _) | Instruction::I64ShrU(_, _) => ShiftOp::UnsignedShr.into(),
+            Instruction::I32Rotl(_, _) | Instruction::I64Rotl(_, _) => ShiftOp::Rotl.into(),
+            Instruction::I32Rotr(_, _) | Instruction::I64Rotr(_, _) => ShiftOp::Rotr.into(),
+
+            Instruction::I32Eq(_, _) | Instruction::I64Eq(_, _) => RelOp::Eq.into(),
+            Instruction::I32Ne(_, _) | Instruction::I64Ne(_, _) => RelOp::Ne.into(),
+            Instruction::I32LtS(_, _) | Instruction::I64LtS(_, _) => RelOp::SignedLt.into(),
+            Instruction::I32LtU(_, _) | Instruction::I64LtU(_, _) => RelOp::UnsignedLt.into(),
+            Instruction::I32GtS(_, _) | Instruction::I64GtS(_, _) => RelOp::SignedGt.into(),
+            Instruction::I32GtU(_, _) | Instruction::I64GtU(_, _) => RelOp::UnsignedGt.into(),
+            Instruction::I32LeS(_, _) | Instruction::I64LeS(_, _) => RelOp::SignedLe.into(),
+            Instruction::I32LeU(_, _) | Instruction::I64LeU(_, _) => RelOp::UnsignedLe.into(),
+            Instruction::I32GeS(_, _) | Instruction::I64GeS(_, _) => RelOp::SignedGe.into(),
+            Instruction::I32GeU(_, _) | Instruction::I64GeU(_, _) => RelOp::UnsignedGe.into(),
+
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'a> From<&Instruction<'a>> for UnaryOp {
+    fn from(value: &Instruction<'a>) -> Self {
+        match value {
+            Instruction::I32Clz(_) | Instruction::I64Clz(_) => UnaryOp::Clz,
+            Instruction::I32Ctz(_) | Instruction::I64Ctz(_) => UnaryOp::Ctz,
+            Instruction::I32Popcnt(_) | Instruction::I64Popcnt(_) => UnaryOp::Popcnt,
             _ => unreachable!(),
         }
     }
@@ -372,81 +482,81 @@ impl<'a> From<Instruction<'a>> for UnaryOp {
 #[allow(clippy::upper_case_acronyms)]
 pub enum InstructionInternal {
     GetLocal(u32, ValueType),
-    SetLocal(u32, ValueType),
+    SetLocal(u32, ValueType, UniArg),
     TeeLocal(u32, ValueType),
     Br(Target),
-    BrIfEqz(Target),
-    BrIfNez(Target),
-    BrTable { count: u32 },
+    BrIfEqz(Target, UniArg),
+    BrIfNez(Target, UniArg),
+    BrTable { count: u32, arg: UniArg },
     BrTableTarget(Target),
 
     Unreachable,
     Return(DropKeep),
 
     Call(u32),
-    CallIndirect(u32),
+    CallIndirect(u32, UniArg),
 
     Drop,
-    Select(ValueType),
+    Select(ValueType, UniArg, UniArg, UniArg),
 
     GetGlobal(u32),
-    SetGlobal(u32),
+    SetGlobal(u32, UniArg),
 
-    I32Load(u32),
-    I64Load(u32),
+    I32Load(u32, UniArg),
+    I64Load(u32, UniArg),
     F32Load(u32),
     F64Load(u32),
-    I32Load8S(u32),
-    I32Load8U(u32),
-    I32Load16S(u32),
-    I32Load16U(u32),
-    I64Load8S(u32),
-    I64Load8U(u32),
-    I64Load16S(u32),
-    I64Load16U(u32),
-    I64Load32S(u32),
-    I64Load32U(u32),
-    I32Store(u32),
-    I64Store(u32),
+    I32Load8S(u32, UniArg),
+    I32Load8U(u32, UniArg),
+    I32Load16S(u32, UniArg),
+    I32Load16U(u32, UniArg),
+    I64Load8S(u32, UniArg),
+    I64Load8U(u32, UniArg),
+    I64Load16S(u32, UniArg),
+    I64Load16U(u32, UniArg),
+    I64Load32S(u32, UniArg),
+    I64Load32U(u32, UniArg),
+    I32Store(u32, UniArg, UniArg),
+    I64Store(u32, UniArg, UniArg),
     F32Store(u32),
     F64Store(u32),
-    I32Store8(u32),
-    I32Store16(u32),
-    I64Store8(u32),
-    I64Store16(u32),
-    I64Store32(u32),
+    I32Store8(u32, UniArg, UniArg),
+    I32Store16(u32, UniArg, UniArg),
+    I64Store8(u32, UniArg, UniArg),
+    I64Store16(u32, UniArg, UniArg),
+    I64Store32(u32, UniArg, UniArg),
 
     CurrentMemory,
-    GrowMemory,
+    GrowMemory(UniArg),
 
     I32Const(i32),
     I64Const(i64),
     F32Const(u32),
     F64Const(u64),
 
-    I32Eqz,
-    I32Eq,
-    I32Ne,
-    I32LtS,
-    I32LtU,
-    I32GtS,
-    I32GtU,
-    I32LeS,
-    I32LeU,
-    I32GeS,
-    I32GeU,
+    I32Eqz(UniArg),
+    I32Eq(UniArg, UniArg),
+    I32Ne(UniArg, UniArg),
+    I32LtS(UniArg, UniArg),
+    I32LtU(UniArg, UniArg),
+    I32GtS(UniArg, UniArg),
+    I32GtU(UniArg, UniArg),
+    I32LeS(UniArg, UniArg),
+    I32LeU(UniArg, UniArg),
+    I32GeS(UniArg, UniArg),
+    I32GeU(UniArg, UniArg),
 
-    I64Eqz,
-    I64Eq,
-    I64Ne,
-    I64LtS,
-    I64LtU,
-    I64GtS,
-    I64GtU,
-    I64LeS,
-    I64LeU,
-    I64GeS,
-    I64GeU,
+    I64Eqz(UniArg),
+    I64Eq(UniArg, UniArg),
+    I64Ne(UniArg, UniArg),
+    I64LtS(UniArg, UniArg),
+    I64LtU(UniArg, UniArg),
+    I64GtS(UniArg, UniArg),
+    I64GtU(UniArg, UniArg),
+    I64LeS(UniArg, UniArg),
+    I64LeU(UniArg, UniArg),
+    I64GeS(UniArg, UniArg),
+    I64GeU(UniArg, UniArg),
 
     F32Eq,
     F32Ne,
@@ -462,43 +572,43 @@ pub enum InstructionInternal {
     F64Le,
     F64Ge,
 
-    I32Clz,
-    I32Ctz,
-    I32Popcnt,
-    I32Add,
-    I32Sub,
-    I32Mul,
-    I32DivS,
-    I32DivU,
-    I32RemS,
-    I32RemU,
-    I32And,
-    I32Or,
-    I32Xor,
-    I32Shl,
-    I32ShrS,
-    I32ShrU,
-    I32Rotl,
-    I32Rotr,
+    I32Clz(UniArg),
+    I32Ctz(UniArg),
+    I32Popcnt(UniArg),
+    I32Add(UniArg, UniArg),
+    I32Sub(UniArg, UniArg),
+    I32Mul(UniArg, UniArg),
+    I32DivS(UniArg, UniArg),
+    I32DivU(UniArg, UniArg),
+    I32RemS(UniArg, UniArg),
+    I32RemU(UniArg, UniArg),
+    I32And(UniArg, UniArg),
+    I32Or(UniArg, UniArg),
+    I32Xor(UniArg, UniArg),
+    I32Shl(UniArg, UniArg),
+    I32ShrS(UniArg, UniArg),
+    I32ShrU(UniArg, UniArg),
+    I32Rotl(UniArg, UniArg),
+    I32Rotr(UniArg, UniArg),
 
-    I64Clz,
-    I64Ctz,
-    I64Popcnt,
-    I64Add,
-    I64Sub,
-    I64Mul,
-    I64DivS,
-    I64DivU,
-    I64RemS,
-    I64RemU,
-    I64And,
-    I64Or,
-    I64Xor,
-    I64Shl,
-    I64ShrS,
-    I64ShrU,
-    I64Rotl,
-    I64Rotr,
+    I64Clz(UniArg),
+    I64Ctz(UniArg),
+    I64Popcnt(UniArg),
+    I64Add(UniArg, UniArg),
+    I64Sub(UniArg, UniArg),
+    I64Mul(UniArg, UniArg),
+    I64DivS(UniArg, UniArg),
+    I64DivU(UniArg, UniArg),
+    I64RemS(UniArg, UniArg),
+    I64RemU(UniArg, UniArg),
+    I64And(UniArg, UniArg),
+    I64Or(UniArg, UniArg),
+    I64Xor(UniArg, UniArg),
+    I64Shl(UniArg, UniArg),
+    I64ShrS(UniArg, UniArg),
+    I64ShrU(UniArg, UniArg),
+    I64Rotl(UniArg, UniArg),
+    I64Rotr(UniArg, UniArg),
     F32Abs,
     F32Neg,
     F32Ceil,
@@ -528,13 +638,13 @@ pub enum InstructionInternal {
     F64Max,
     F64Copysign,
 
-    I32WrapI64,
+    I32WrapI64(UniArg),
     I32TruncSF32,
     I32TruncUF32,
     I32TruncSF64,
     I32TruncUF64,
-    I64ExtendSI32,
-    I64ExtendUI32,
+    I64ExtendSI32(UniArg),
+    I64ExtendUI32(UniArg),
     I64TruncSF32,
     I64TruncUF32,
     I64TruncSF64,
@@ -555,11 +665,237 @@ pub enum InstructionInternal {
     F32ReinterpretI32,
     F64ReinterpretI64,
 
-    I32Extend8S,
-    I32Extend16S,
-    I64Extend8S,
-    I64Extend16S,
-    I64Extend32S,
+    I32Extend8S(UniArg),
+    I32Extend16S(UniArg),
+    I64Extend8S(UniArg),
+    I64Extend16S(UniArg),
+    I64Extend32S(UniArg),
+}
+
+impl InstructionInternal {
+    pub(crate) fn get_uniarg_skip_count(&self) -> usize {
+        match self {
+            _ => 0,
+        }
+    }
+
+    pub(crate) fn get_uniarg_count(&self) -> usize {
+        match self {
+            InstructionInternal::Select(_, _, _, _) => 3,
+            InstructionInternal::I32Store(_, _, _)
+            | InstructionInternal::I64Store(_, _, _)
+            | InstructionInternal::I32Store8(_, _, _)
+            | InstructionInternal::I32Store16(_, _, _)
+            | InstructionInternal::I64Store8(_, _, _)
+            | InstructionInternal::I64Store16(_, _, _)
+            | InstructionInternal::I64Store32(_, _, _)
+            | InstructionInternal::I32Eq(_, _)
+            | InstructionInternal::I32Ne(_, _)
+            | InstructionInternal::I32LtS(_, _)
+            | InstructionInternal::I32LtU(_, _)
+            | InstructionInternal::I32GtS(_, _)
+            | InstructionInternal::I32GtU(_, _)
+            | InstructionInternal::I32LeS(_, _)
+            | InstructionInternal::I32LeU(_, _)
+            | InstructionInternal::I32GeS(_, _)
+            | InstructionInternal::I32GeU(_, _)
+            | InstructionInternal::I64Eq(_, _)
+            | InstructionInternal::I64Ne(_, _)
+            | InstructionInternal::I64LtS(_, _)
+            | InstructionInternal::I64LtU(_, _)
+            | InstructionInternal::I64GtS(_, _)
+            | InstructionInternal::I64GtU(_, _)
+            | InstructionInternal::I64LeS(_, _)
+            | InstructionInternal::I64LeU(_, _)
+            | InstructionInternal::I64GeS(_, _)
+            | InstructionInternal::I64GeU(_, _)
+            | InstructionInternal::I32Add(_, _)
+            | InstructionInternal::I32Sub(_, _)
+            | InstructionInternal::I32Mul(_, _)
+            | InstructionInternal::I32DivS(_, _)
+            | InstructionInternal::I32DivU(_, _)
+            | InstructionInternal::I32RemS(_, _)
+            | InstructionInternal::I32RemU(_, _)
+            | InstructionInternal::I32And(_, _)
+            | InstructionInternal::I32Or(_, _)
+            | InstructionInternal::I32Xor(_, _)
+            | InstructionInternal::I32Shl(_, _)
+            | InstructionInternal::I32ShrS(_, _)
+            | InstructionInternal::I32ShrU(_, _)
+            | InstructionInternal::I32Rotl(_, _)
+            | InstructionInternal::I32Rotr(_, _)
+            | InstructionInternal::I64Add(_, _)
+            | InstructionInternal::I64Sub(_, _)
+            | InstructionInternal::I64Mul(_, _)
+            | InstructionInternal::I64DivS(_, _)
+            | InstructionInternal::I64DivU(_, _)
+            | InstructionInternal::I64RemS(_, _)
+            | InstructionInternal::I64RemU(_, _)
+            | InstructionInternal::I64And(_, _)
+            | InstructionInternal::I64Or(_, _)
+            | InstructionInternal::I64Xor(_, _)
+            | InstructionInternal::I64Shl(_, _)
+            | InstructionInternal::I64ShrS(_, _)
+            | InstructionInternal::I64ShrU(_, _)
+            | InstructionInternal::I64Rotl(_, _)
+            | InstructionInternal::I64Rotr(_, _) => 2,
+
+            InstructionInternal::BrIfEqz(_, _)
+            | InstructionInternal::BrIfNez(_, _)
+            | InstructionInternal::BrTable { .. }
+            | InstructionInternal::CallIndirect(_, _) => 1,
+
+            InstructionInternal::SetLocal(_, _, _)
+            | InstructionInternal::SetGlobal(_, _)
+            | InstructionInternal::I32Load(_, _)
+            | InstructionInternal::I64Load(_, _)
+            | InstructionInternal::I32Load8S(_, _)
+            | InstructionInternal::I32Load8U(_, _)
+            | InstructionInternal::I32Load16S(_, _)
+            | InstructionInternal::I32Load16U(_, _)
+            | InstructionInternal::I64Load8S(_, _)
+            | InstructionInternal::I64Load8U(_, _)
+            | InstructionInternal::I64Load16S(_, _)
+            | InstructionInternal::I64Load16U(_, _)
+            | InstructionInternal::I64Load32S(_, _)
+            | InstructionInternal::I64Load32U(_, _)
+            | InstructionInternal::GrowMemory(_)
+            | InstructionInternal::I32Eqz(_)
+            | InstructionInternal::I64Eqz(_)
+            | InstructionInternal::I32Clz(_)
+            | InstructionInternal::I32Ctz(_)
+            | InstructionInternal::I32Popcnt(_)
+            | InstructionInternal::I64Clz(_)
+            | InstructionInternal::I64Ctz(_)
+            | InstructionInternal::I64Popcnt(_)
+            | InstructionInternal::I32WrapI64(_)
+            | InstructionInternal::I64ExtendSI32(_)
+            | InstructionInternal::I64ExtendUI32(_)
+            | InstructionInternal::I32Extend8S(_)
+            | InstructionInternal::I32Extend16S(_)
+            | InstructionInternal::I64Extend8S(_)
+            | InstructionInternal::I64Extend16S(_)
+            | InstructionInternal::I64Extend32S(_) => 1,
+            _ => 0,
+        }
+    }
+
+    pub(crate) fn update_uniarg(&mut self, uniargs: [Option<UniArg>; 3]) {
+        if self.get_uniarg_count() == 0 {
+            return;
+        }
+
+        match self {
+            InstructionInternal::Select(_, a, b, c) => {
+                *c = uniargs[0].unwrap();
+                *b = uniargs[1].unwrap();
+                *a = uniargs[2].unwrap();
+            }
+
+            InstructionInternal::I32Store(_, a, b)
+            | InstructionInternal::I64Store(_, a, b)
+            | InstructionInternal::I32Store8(_, a, b)
+            | InstructionInternal::I32Store16(_, a, b)
+            | InstructionInternal::I64Store8(_, a, b)
+            | InstructionInternal::I64Store16(_, a, b)
+            | InstructionInternal::I64Store32(_, a, b)
+            | InstructionInternal::I32Eq(a, b)
+            | InstructionInternal::I32Ne(a, b)
+            | InstructionInternal::I32LtS(a, b)
+            | InstructionInternal::I32LtU(a, b)
+            | InstructionInternal::I32GtS(a, b)
+            | InstructionInternal::I32GtU(a, b)
+            | InstructionInternal::I32LeS(a, b)
+            | InstructionInternal::I32LeU(a, b)
+            | InstructionInternal::I32GeS(a, b)
+            | InstructionInternal::I32GeU(a, b)
+            | InstructionInternal::I64Eq(a, b)
+            | InstructionInternal::I64Ne(a, b)
+            | InstructionInternal::I64LtS(a, b)
+            | InstructionInternal::I64LtU(a, b)
+            | InstructionInternal::I64GtS(a, b)
+            | InstructionInternal::I64GtU(a, b)
+            | InstructionInternal::I64LeS(a, b)
+            | InstructionInternal::I64LeU(a, b)
+            | InstructionInternal::I64GeS(a, b)
+            | InstructionInternal::I64GeU(a, b)
+            | InstructionInternal::I32Add(a, b)
+            | InstructionInternal::I32Sub(a, b)
+            | InstructionInternal::I32Mul(a, b)
+            | InstructionInternal::I32DivS(a, b)
+            | InstructionInternal::I32DivU(a, b)
+            | InstructionInternal::I32RemS(a, b)
+            | InstructionInternal::I32RemU(a, b)
+            | InstructionInternal::I32And(a, b)
+            | InstructionInternal::I32Or(a, b)
+            | InstructionInternal::I32Xor(a, b)
+            | InstructionInternal::I32Shl(a, b)
+            | InstructionInternal::I32ShrS(a, b)
+            | InstructionInternal::I32ShrU(a, b)
+            | InstructionInternal::I32Rotl(a, b)
+            | InstructionInternal::I32Rotr(a, b)
+            | InstructionInternal::I64Add(a, b)
+            | InstructionInternal::I64Sub(a, b)
+            | InstructionInternal::I64Mul(a, b)
+            | InstructionInternal::I64DivS(a, b)
+            | InstructionInternal::I64DivU(a, b)
+            | InstructionInternal::I64RemS(a, b)
+            | InstructionInternal::I64RemU(a, b)
+            | InstructionInternal::I64And(a, b)
+            | InstructionInternal::I64Or(a, b)
+            | InstructionInternal::I64Xor(a, b)
+            | InstructionInternal::I64Shl(a, b)
+            | InstructionInternal::I64ShrS(a, b)
+            | InstructionInternal::I64ShrU(a, b)
+            | InstructionInternal::I64Rotl(a, b)
+            | InstructionInternal::I64Rotr(a, b) => {
+                *b = uniargs[0].unwrap();
+                *a = uniargs[1].unwrap();
+            }
+
+            InstructionInternal::BrIfEqz(_, arg)
+            | InstructionInternal::BrIfNez(_, arg)
+            | InstructionInternal::BrTable { arg, .. }
+            | InstructionInternal::CallIndirect(_, arg) => {
+                *arg = uniargs[0].unwrap();
+            }
+
+            InstructionInternal::SetLocal(_, _, arg)
+            | InstructionInternal::SetGlobal(_, arg)
+            | InstructionInternal::I32Load(_, arg)
+            | InstructionInternal::I64Load(_, arg)
+            | InstructionInternal::I32Load8S(_, arg)
+            | InstructionInternal::I32Load8U(_, arg)
+            | InstructionInternal::I32Load16S(_, arg)
+            | InstructionInternal::I32Load16U(_, arg)
+            | InstructionInternal::I64Load8S(_, arg)
+            | InstructionInternal::I64Load8U(_, arg)
+            | InstructionInternal::I64Load16S(_, arg)
+            | InstructionInternal::I64Load16U(_, arg)
+            | InstructionInternal::I64Load32S(_, arg)
+            | InstructionInternal::I64Load32U(_, arg)
+            | InstructionInternal::GrowMemory(arg)
+            | InstructionInternal::I32Eqz(arg)
+            | InstructionInternal::I64Eqz(arg)
+            | InstructionInternal::I32Clz(arg)
+            | InstructionInternal::I32Ctz(arg)
+            | InstructionInternal::I32Popcnt(arg)
+            | InstructionInternal::I64Clz(arg)
+            | InstructionInternal::I64Ctz(arg)
+            | InstructionInternal::I64Popcnt(arg)
+            | InstructionInternal::I32WrapI64(arg)
+            | InstructionInternal::I64ExtendSI32(arg)
+            | InstructionInternal::I64ExtendUI32(arg)
+            | InstructionInternal::I32Extend8S(arg)
+            | InstructionInternal::I32Extend16S(arg)
+            | InstructionInternal::I64Extend8S(arg)
+            | InstructionInternal::I64Extend16S(arg)
+            | InstructionInternal::I64Extend32S(arg) => {
+                *arg = uniargs[0].unwrap();
+            }
+            _ => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -586,8 +922,8 @@ impl Instructions {
         match reloc {
             Reloc::Br { pc } => match self.vec[pc as usize] {
                 InstructionInternal::Br(ref mut target)
-                | InstructionInternal::BrIfEqz(ref mut target)
-                | InstructionInternal::BrIfNez(ref mut target) => target.dst_pc = dst_pc,
+                | InstructionInternal::BrIfEqz(ref mut target, _)
+                | InstructionInternal::BrIfNez(ref mut target, _) => target.dst_pc = dst_pc,
                 _ => panic!("branch relocation points to a non-branch instruction"),
             },
             Reloc::BrTable { pc, idx } => match &mut self.vec[pc as usize + idx + 1] {
@@ -626,19 +962,20 @@ impl<'a> Iterator for InstructionIter<'a> {
 
         let out = match *internal {
             InstructionInternal::GetLocal(x, typ) => Instruction::GetLocal(x, typ),
-            InstructionInternal::SetLocal(x, typ) => Instruction::SetLocal(x, typ),
+            InstructionInternal::SetLocal(x, typ, arg) => Instruction::SetLocal(x, typ, arg),
             InstructionInternal::TeeLocal(x, typ) => Instruction::TeeLocal(x, typ),
             InstructionInternal::Br(x) => Instruction::Br(x),
-            InstructionInternal::BrIfEqz(x) => Instruction::BrIfEqz(x),
-            InstructionInternal::BrIfNez(x) => Instruction::BrIfNez(x),
-            InstructionInternal::BrTable { count } => {
+            InstructionInternal::BrIfEqz(x, arg) => Instruction::BrIfEqz(x, arg),
+            InstructionInternal::BrIfNez(x, arg) => Instruction::BrIfNez(x, arg),
+            InstructionInternal::BrTable { count, arg } => {
                 let start = self.position as usize + 1;
 
                 self.position += count;
 
-                Instruction::BrTable(BrTargets::from_internal(
-                    &self.instructions[start..start + count as usize],
-                ))
+                Instruction::BrTable(
+                    BrTargets::from_internal(&self.instructions[start..start + count as usize]),
+                    arg,
+                )
             }
             InstructionInternal::BrTableTarget(_) => panic!("Executed BrTableTarget"),
 
@@ -646,69 +983,77 @@ impl<'a> Iterator for InstructionIter<'a> {
             InstructionInternal::Return(x) => Instruction::Return(x),
 
             InstructionInternal::Call(x) => Instruction::Call(x),
-            InstructionInternal::CallIndirect(x) => Instruction::CallIndirect(x),
+            InstructionInternal::CallIndirect(x, arg) => Instruction::CallIndirect(x, arg),
 
             InstructionInternal::Drop => Instruction::Drop,
-            InstructionInternal::Select(vtype) => Instruction::Select(vtype),
+            InstructionInternal::Select(vtype, lhs, rhs, cond) => {
+                Instruction::Select(vtype, lhs, rhs, cond)
+            }
 
             InstructionInternal::GetGlobal(x) => Instruction::GetGlobal(x),
-            InstructionInternal::SetGlobal(x) => Instruction::SetGlobal(x),
+            InstructionInternal::SetGlobal(x, arg) => Instruction::SetGlobal(x, arg),
 
-            InstructionInternal::I32Load(x) => Instruction::I32Load(x),
-            InstructionInternal::I64Load(x) => Instruction::I64Load(x),
+            InstructionInternal::I32Load(x, arg) => Instruction::I32Load(x, arg),
+            InstructionInternal::I64Load(x, arg) => Instruction::I64Load(x, arg),
             InstructionInternal::F32Load(x) => Instruction::F32Load(x),
             InstructionInternal::F64Load(x) => Instruction::F64Load(x),
-            InstructionInternal::I32Load8S(x) => Instruction::I32Load8S(x),
-            InstructionInternal::I32Load8U(x) => Instruction::I32Load8U(x),
-            InstructionInternal::I32Load16S(x) => Instruction::I32Load16S(x),
-            InstructionInternal::I32Load16U(x) => Instruction::I32Load16U(x),
-            InstructionInternal::I64Load8S(x) => Instruction::I64Load8S(x),
-            InstructionInternal::I64Load8U(x) => Instruction::I64Load8U(x),
-            InstructionInternal::I64Load16S(x) => Instruction::I64Load16S(x),
-            InstructionInternal::I64Load16U(x) => Instruction::I64Load16U(x),
-            InstructionInternal::I64Load32S(x) => Instruction::I64Load32S(x),
-            InstructionInternal::I64Load32U(x) => Instruction::I64Load32U(x),
-            InstructionInternal::I32Store(x) => Instruction::I32Store(x),
-            InstructionInternal::I64Store(x) => Instruction::I64Store(x),
+            InstructionInternal::I32Load8S(x, arg) => Instruction::I32Load8S(x, arg),
+            InstructionInternal::I32Load8U(x, arg) => Instruction::I32Load8U(x, arg),
+            InstructionInternal::I32Load16S(x, arg) => Instruction::I32Load16S(x, arg),
+            InstructionInternal::I32Load16U(x, arg) => Instruction::I32Load16U(x, arg),
+            InstructionInternal::I64Load8S(x, arg) => Instruction::I64Load8S(x, arg),
+            InstructionInternal::I64Load8U(x, arg) => Instruction::I64Load8U(x, arg),
+            InstructionInternal::I64Load16S(x, arg) => Instruction::I64Load16S(x, arg),
+            InstructionInternal::I64Load16U(x, arg) => Instruction::I64Load16U(x, arg),
+            InstructionInternal::I64Load32S(x, arg) => Instruction::I64Load32S(x, arg),
+            InstructionInternal::I64Load32U(x, arg) => Instruction::I64Load32U(x, arg),
+            InstructionInternal::I32Store(x, arg0, arg1) => Instruction::I32Store(x, arg0, arg1),
+            InstructionInternal::I64Store(x, arg0, arg1) => Instruction::I64Store(x, arg0, arg1),
             InstructionInternal::F32Store(x) => Instruction::F32Store(x),
             InstructionInternal::F64Store(x) => Instruction::F64Store(x),
-            InstructionInternal::I32Store8(x) => Instruction::I32Store8(x),
-            InstructionInternal::I32Store16(x) => Instruction::I32Store16(x),
-            InstructionInternal::I64Store8(x) => Instruction::I64Store8(x),
-            InstructionInternal::I64Store16(x) => Instruction::I64Store16(x),
-            InstructionInternal::I64Store32(x) => Instruction::I64Store32(x),
+            InstructionInternal::I32Store8(x, arg0, arg1) => Instruction::I32Store8(x, arg0, arg1),
+            InstructionInternal::I32Store16(x, arg0, arg1) => {
+                Instruction::I32Store16(x, arg0, arg1)
+            }
+            InstructionInternal::I64Store8(x, arg0, arg1) => Instruction::I64Store8(x, arg0, arg1),
+            InstructionInternal::I64Store16(x, arg0, arg1) => {
+                Instruction::I64Store16(x, arg0, arg1)
+            }
+            InstructionInternal::I64Store32(x, arg0, arg1) => {
+                Instruction::I64Store32(x, arg0, arg1)
+            }
 
             InstructionInternal::CurrentMemory => Instruction::CurrentMemory,
-            InstructionInternal::GrowMemory => Instruction::GrowMemory,
+            InstructionInternal::GrowMemory(arg) => Instruction::GrowMemory(arg),
 
             InstructionInternal::I32Const(x) => Instruction::I32Const(x),
             InstructionInternal::I64Const(x) => Instruction::I64Const(x),
             InstructionInternal::F32Const(x) => Instruction::F32Const(x),
             InstructionInternal::F64Const(x) => Instruction::F64Const(x),
 
-            InstructionInternal::I32Eqz => Instruction::I32Eqz,
-            InstructionInternal::I32Eq => Instruction::I32Eq,
-            InstructionInternal::I32Ne => Instruction::I32Ne,
-            InstructionInternal::I32LtS => Instruction::I32LtS,
-            InstructionInternal::I32LtU => Instruction::I32LtU,
-            InstructionInternal::I32GtS => Instruction::I32GtS,
-            InstructionInternal::I32GtU => Instruction::I32GtU,
-            InstructionInternal::I32LeS => Instruction::I32LeS,
-            InstructionInternal::I32LeU => Instruction::I32LeU,
-            InstructionInternal::I32GeS => Instruction::I32GeS,
-            InstructionInternal::I32GeU => Instruction::I32GeU,
+            InstructionInternal::I32Eqz(arg) => Instruction::I32Eqz(arg),
+            InstructionInternal::I32Eq(arg0, arg1) => Instruction::I32Eq(arg0, arg1),
+            InstructionInternal::I32Ne(arg0, arg1) => Instruction::I32Ne(arg0, arg1),
+            InstructionInternal::I32LtS(arg0, arg1) => Instruction::I32LtS(arg0, arg1),
+            InstructionInternal::I32LtU(arg0, arg1) => Instruction::I32LtU(arg0, arg1),
+            InstructionInternal::I32GtS(arg0, arg1) => Instruction::I32GtS(arg0, arg1),
+            InstructionInternal::I32GtU(arg0, arg1) => Instruction::I32GtU(arg0, arg1),
+            InstructionInternal::I32LeS(arg0, arg1) => Instruction::I32LeS(arg0, arg1),
+            InstructionInternal::I32LeU(arg0, arg1) => Instruction::I32LeU(arg0, arg1),
+            InstructionInternal::I32GeS(arg0, arg1) => Instruction::I32GeS(arg0, arg1),
+            InstructionInternal::I32GeU(arg0, arg1) => Instruction::I32GeU(arg0, arg1),
 
-            InstructionInternal::I64Eqz => Instruction::I64Eqz,
-            InstructionInternal::I64Eq => Instruction::I64Eq,
-            InstructionInternal::I64Ne => Instruction::I64Ne,
-            InstructionInternal::I64LtS => Instruction::I64LtS,
-            InstructionInternal::I64LtU => Instruction::I64LtU,
-            InstructionInternal::I64GtS => Instruction::I64GtS,
-            InstructionInternal::I64GtU => Instruction::I64GtU,
-            InstructionInternal::I64LeS => Instruction::I64LeS,
-            InstructionInternal::I64LeU => Instruction::I64LeU,
-            InstructionInternal::I64GeS => Instruction::I64GeS,
-            InstructionInternal::I64GeU => Instruction::I64GeU,
+            InstructionInternal::I64Eqz(arg) => Instruction::I64Eqz(arg),
+            InstructionInternal::I64Eq(arg0, arg1) => Instruction::I64Eq(arg0, arg1),
+            InstructionInternal::I64Ne(arg0, arg1) => Instruction::I64Ne(arg0, arg1),
+            InstructionInternal::I64LtS(arg0, arg1) => Instruction::I64LtS(arg0, arg1),
+            InstructionInternal::I64LtU(arg0, arg1) => Instruction::I64LtU(arg0, arg1),
+            InstructionInternal::I64GtS(arg0, arg1) => Instruction::I64GtS(arg0, arg1),
+            InstructionInternal::I64GtU(arg0, arg1) => Instruction::I64GtU(arg0, arg1),
+            InstructionInternal::I64LeS(arg0, arg1) => Instruction::I64LeS(arg0, arg1),
+            InstructionInternal::I64LeU(arg0, arg1) => Instruction::I64LeU(arg0, arg1),
+            InstructionInternal::I64GeS(arg0, arg1) => Instruction::I64GeS(arg0, arg1),
+            InstructionInternal::I64GeU(arg0, arg1) => Instruction::I64GeU(arg0, arg1),
 
             InstructionInternal::F32Eq => Instruction::F32Eq,
             InstructionInternal::F32Ne => Instruction::F32Ne,
@@ -724,43 +1069,43 @@ impl<'a> Iterator for InstructionIter<'a> {
             InstructionInternal::F64Le => Instruction::F64Le,
             InstructionInternal::F64Ge => Instruction::F64Ge,
 
-            InstructionInternal::I32Clz => Instruction::I32Clz,
-            InstructionInternal::I32Ctz => Instruction::I32Ctz,
-            InstructionInternal::I32Popcnt => Instruction::I32Popcnt,
-            InstructionInternal::I32Add => Instruction::I32Add,
-            InstructionInternal::I32Sub => Instruction::I32Sub,
-            InstructionInternal::I32Mul => Instruction::I32Mul,
-            InstructionInternal::I32DivS => Instruction::I32DivS,
-            InstructionInternal::I32DivU => Instruction::I32DivU,
-            InstructionInternal::I32RemS => Instruction::I32RemS,
-            InstructionInternal::I32RemU => Instruction::I32RemU,
-            InstructionInternal::I32And => Instruction::I32And,
-            InstructionInternal::I32Or => Instruction::I32Or,
-            InstructionInternal::I32Xor => Instruction::I32Xor,
-            InstructionInternal::I32Shl => Instruction::I32Shl,
-            InstructionInternal::I32ShrS => Instruction::I32ShrS,
-            InstructionInternal::I32ShrU => Instruction::I32ShrU,
-            InstructionInternal::I32Rotl => Instruction::I32Rotl,
-            InstructionInternal::I32Rotr => Instruction::I32Rotr,
+            InstructionInternal::I32Clz(arg) => Instruction::I32Clz(arg),
+            InstructionInternal::I32Ctz(arg) => Instruction::I32Ctz(arg),
+            InstructionInternal::I32Popcnt(arg) => Instruction::I32Popcnt(arg),
+            InstructionInternal::I32Add(arg0, arg1) => Instruction::I32Add(arg0, arg1),
+            InstructionInternal::I32Sub(arg0, arg1) => Instruction::I32Sub(arg0, arg1),
+            InstructionInternal::I32Mul(arg0, arg1) => Instruction::I32Mul(arg0, arg1),
+            InstructionInternal::I32DivS(arg0, arg1) => Instruction::I32DivS(arg0, arg1),
+            InstructionInternal::I32DivU(arg0, arg1) => Instruction::I32DivU(arg0, arg1),
+            InstructionInternal::I32RemS(arg0, arg1) => Instruction::I32RemS(arg0, arg1),
+            InstructionInternal::I32RemU(arg0, arg1) => Instruction::I32RemU(arg0, arg1),
+            InstructionInternal::I32And(arg0, arg1) => Instruction::I32And(arg0, arg1),
+            InstructionInternal::I32Or(arg0, arg1) => Instruction::I32Or(arg0, arg1),
+            InstructionInternal::I32Xor(arg0, arg1) => Instruction::I32Xor(arg0, arg1),
+            InstructionInternal::I32Shl(arg0, arg1) => Instruction::I32Shl(arg0, arg1),
+            InstructionInternal::I32ShrS(arg0, arg1) => Instruction::I32ShrS(arg0, arg1),
+            InstructionInternal::I32ShrU(arg0, arg1) => Instruction::I32ShrU(arg0, arg1),
+            InstructionInternal::I32Rotl(arg0, arg1) => Instruction::I32Rotl(arg0, arg1),
+            InstructionInternal::I32Rotr(arg0, arg1) => Instruction::I32Rotr(arg0, arg1),
 
-            InstructionInternal::I64Clz => Instruction::I64Clz,
-            InstructionInternal::I64Ctz => Instruction::I64Ctz,
-            InstructionInternal::I64Popcnt => Instruction::I64Popcnt,
-            InstructionInternal::I64Add => Instruction::I64Add,
-            InstructionInternal::I64Sub => Instruction::I64Sub,
-            InstructionInternal::I64Mul => Instruction::I64Mul,
-            InstructionInternal::I64DivS => Instruction::I64DivS,
-            InstructionInternal::I64DivU => Instruction::I64DivU,
-            InstructionInternal::I64RemS => Instruction::I64RemS,
-            InstructionInternal::I64RemU => Instruction::I64RemU,
-            InstructionInternal::I64And => Instruction::I64And,
-            InstructionInternal::I64Or => Instruction::I64Or,
-            InstructionInternal::I64Xor => Instruction::I64Xor,
-            InstructionInternal::I64Shl => Instruction::I64Shl,
-            InstructionInternal::I64ShrS => Instruction::I64ShrS,
-            InstructionInternal::I64ShrU => Instruction::I64ShrU,
-            InstructionInternal::I64Rotl => Instruction::I64Rotl,
-            InstructionInternal::I64Rotr => Instruction::I64Rotr,
+            InstructionInternal::I64Clz(arg) => Instruction::I64Clz(arg),
+            InstructionInternal::I64Ctz(arg) => Instruction::I64Ctz(arg),
+            InstructionInternal::I64Popcnt(arg) => Instruction::I64Popcnt(arg),
+            InstructionInternal::I64Add(arg0, arg1) => Instruction::I64Add(arg0, arg1),
+            InstructionInternal::I64Sub(arg0, arg1) => Instruction::I64Sub(arg0, arg1),
+            InstructionInternal::I64Mul(arg0, arg1) => Instruction::I64Mul(arg0, arg1),
+            InstructionInternal::I64DivS(arg0, arg1) => Instruction::I64DivS(arg0, arg1),
+            InstructionInternal::I64DivU(arg0, arg1) => Instruction::I64DivU(arg0, arg1),
+            InstructionInternal::I64RemS(arg0, arg1) => Instruction::I64RemS(arg0, arg1),
+            InstructionInternal::I64RemU(arg0, arg1) => Instruction::I64RemU(arg0, arg1),
+            InstructionInternal::I64And(arg0, arg1) => Instruction::I64And(arg0, arg1),
+            InstructionInternal::I64Or(arg0, arg1) => Instruction::I64Or(arg0, arg1),
+            InstructionInternal::I64Xor(arg0, arg1) => Instruction::I64Xor(arg0, arg1),
+            InstructionInternal::I64Shl(arg0, arg1) => Instruction::I64Shl(arg0, arg1),
+            InstructionInternal::I64ShrS(arg0, arg1) => Instruction::I64ShrS(arg0, arg1),
+            InstructionInternal::I64ShrU(arg0, arg1) => Instruction::I64ShrU(arg0, arg1),
+            InstructionInternal::I64Rotl(arg0, arg1) => Instruction::I64Rotl(arg0, arg1),
+            InstructionInternal::I64Rotr(arg0, arg1) => Instruction::I64Rotr(arg0, arg1),
             InstructionInternal::F32Abs => Instruction::F32Abs,
             InstructionInternal::F32Neg => Instruction::F32Neg,
             InstructionInternal::F32Ceil => Instruction::F32Ceil,
@@ -790,13 +1135,13 @@ impl<'a> Iterator for InstructionIter<'a> {
             InstructionInternal::F64Max => Instruction::F64Max,
             InstructionInternal::F64Copysign => Instruction::F64Copysign,
 
-            InstructionInternal::I32WrapI64 => Instruction::I32WrapI64,
+            InstructionInternal::I32WrapI64(arg) => Instruction::I32WrapI64(arg),
             InstructionInternal::I32TruncSF32 => Instruction::I32TruncSF32,
             InstructionInternal::I32TruncUF32 => Instruction::I32TruncUF32,
             InstructionInternal::I32TruncSF64 => Instruction::I32TruncSF64,
             InstructionInternal::I32TruncUF64 => Instruction::I32TruncUF64,
-            InstructionInternal::I64ExtendSI32 => Instruction::I64ExtendSI32,
-            InstructionInternal::I64ExtendUI32 => Instruction::I64ExtendUI32,
+            InstructionInternal::I64ExtendSI32(arg) => Instruction::I64ExtendSI32(arg),
+            InstructionInternal::I64ExtendUI32(arg) => Instruction::I64ExtendUI32(arg),
             InstructionInternal::I64TruncSF32 => Instruction::I64TruncSF32,
             InstructionInternal::I64TruncUF32 => Instruction::I64TruncUF32,
             InstructionInternal::I64TruncSF64 => Instruction::I64TruncSF64,
@@ -817,11 +1162,11 @@ impl<'a> Iterator for InstructionIter<'a> {
             InstructionInternal::F32ReinterpretI32 => Instruction::F32ReinterpretI32,
             InstructionInternal::F64ReinterpretI64 => Instruction::F64ReinterpretI64,
 
-            InstructionInternal::I32Extend8S => Instruction::I32Extend8S,
-            InstructionInternal::I32Extend16S => Instruction::I32Extend16S,
-            InstructionInternal::I64Extend8S => Instruction::I64Extend8S,
-            InstructionInternal::I64Extend16S => Instruction::I64Extend16S,
-            InstructionInternal::I64Extend32S => Instruction::I64Extend32S,
+            InstructionInternal::I32Extend8S(arg) => Instruction::I32Extend8S(arg),
+            InstructionInternal::I32Extend16S(arg) => Instruction::I32Extend16S(arg),
+            InstructionInternal::I64Extend8S(arg) => Instruction::I64Extend8S(arg),
+            InstructionInternal::I64Extend16S(arg) => Instruction::I64Extend16S(arg),
+            InstructionInternal::I64Extend32S(arg) => Instruction::I64Extend32S(arg),
         };
 
         self.position += 1;
