@@ -1398,9 +1398,12 @@ impl Sink {
 
             instruction.update_uniarg(args);
 
-            if !self.uncommitted_uniarg.is_empty() {
-                println!("this instruction is {:?}", instruction)
-            }
+            /*
+             * pending instructions
+             * if !self.uncommitted_uniarg.is_empty() {
+             *    println!("this instruction is {:?}", instruction)
+             * }
+             */
             self.commit_uniarg();
         }
 
