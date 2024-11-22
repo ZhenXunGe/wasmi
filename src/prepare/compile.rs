@@ -1389,7 +1389,7 @@ impl Sink {
                         args[j]
                             .iter_mut()
                             .next()
-                            .map(|x| x.try_decease_stack_depth(1));
+                            .map(|x| x.try_decrease_stack_depth(1));
                     }
                 } else {
                     args[i] = Some(UniArg::Pop)
